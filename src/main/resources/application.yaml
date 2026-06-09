@@ -34,3 +34,6 @@ app:
   mail:
     from: ${MAIL_FROM:your-email@gmail.com}
     from-name: ${MAIL_FROM_NAME:Scheduler}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
