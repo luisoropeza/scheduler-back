@@ -6,7 +6,7 @@ A healthcare appointment scheduling platform built as a microservices system. Pr
 
 ```
                   ┌──────────────────────────────────────────────────────────────────┐
-                  │               gateway-service  :8080  (Spring Cloud Gateway)       │
+                  │               gateway-service  :8080  (Spring Cloud Gateway)     │
                   │  /api/providers/{id}/schedules/**  → schedule-service            │
                   │  /api/providers/**                 → provider-service            │
                   │  /api/appointments/**              → appointment-service         │
