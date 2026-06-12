@@ -128,13 +128,17 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  # ── API Gateway (nginx) ─────────────────────────────────────────────────────
-  nginx:
-    image: nginx:alpine
+  # ── API Gateway (Spring Cloud Gateway) ───────────────────────────────────────
+  gateway-service:
+    build:
+      context: .
+      dockerfile: gateway-service/Dockerfile
     ports:
       - "8080:8080"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    environment:
+      PROVIDER_SERVICE_URL: http://provider-service:8081
+      SCHEDULE_SERVICE_URL: http://schedule-service:8082
+      APPOINTMENT_SERVICE_URL: http://appointment-service:8083
     depends_on:
       - provider-service
       - schedule-service

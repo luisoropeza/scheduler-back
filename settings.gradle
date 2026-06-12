@@ -1,4 +1,5 @@
 rootProject.name = 'scheduler-platform'
+include 'gateway-service'
 include 'provider-service'
 include 'schedule-service'
 include 'appointment-service'

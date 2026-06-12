@@ -5,26 +5,26 @@ A healthcare appointment scheduling platform built as a microservices system. Pr
 ## Architecture
 
 ```
-                        ┌─────────────────────────────────────────────────────┐
-                        │                nginx  :8080                          │
-                        │  /api/providers/{id}/schedules  → schedule-service   │
-                        │  /api/providers                 → provider-service   │
-                        │  /api/appointments              → appointment-service │
-                        └──────────┬──────────┬──────────┬────────────────────┘
-                                   │          │          │
-                    ┌──────────────┘  ┌───────┘  ┌──────┘
-                    ▼                 ▼           ▼
-           provider-service   schedule-service  appointment-service
-               :8081               :8082             :8083
-                  │                   │                  │
-             provider_db         schedule_db        appointment_db
-              (pg :5432)          (pg :5433)          (pg :5434)
-                                                         │
-                                                    RabbitMQ :5672
-                                                         │
-                                               notification-service
-                                                      :8084
-                                                    (SMTP email)
+                  ┌──────────────────────────────────────────────────────────────────┐
+                  │               gateway-service  :8080  (Spring Cloud Gateway)     │
+                  │  /api/providers/{id}/schedules/**  → schedule-service            │
+                  │  /api/providers/**                 → provider-service            │
+                  │  /api/appointments/**              → appointment-service         │
+                  └──────────┬──────────────────┬───────────────────┬───────────────┘
+                             │                  │                   │
+                    ┌────────┘          ┌───────┘           ┌──────┘
+                    ▼                   ▼                    ▼
+           provider-service     schedule-service     appointment-service
+               :8081                 :8082                 :8083
+                  │                     │                      │
+             provider_db           schedule_db           appointment_db
+              (pg :5432)            (pg :5433)             (pg :5434)
+                                                               │
+                                                          RabbitMQ :5672
+                                                               │
+                                                     notification-service
+                                                            :8084
+                                                          (SMTP email)
 ```
 
 ### Services
@@ -35,7 +35,7 @@ A healthcare appointment scheduling platform built as a microservices system. Pr
 | **schedule-service** | 8082 | Time slot management, public + internal APIs |
 | **appointment-service** | 8083 | Booking, confirmation, cancellation; publishes RabbitMQ events |
 | **notification-service** | 8084 | Consumes booking events, sends HTML confirmation emails |
-| **nginx** | 8080 | API gateway — single public entry point |
+| **gateway-service** | 8080 | Spring Cloud Gateway — path-based routing, single public entry point |
 
 Each service owns its own PostgreSQL database. Cross-service data is denormalized at write time (no cross-service JPA relationships). Appointment booking events are delivered to notification-service via RabbitMQ, so email failures never roll back a booking.
 
@@ -53,7 +53,7 @@ Each service owns its own PostgreSQL database. Cross-service data is denormalize
 | Validation | Spring Validation (Jakarta) |
 | Email | Spring Mail (SMTP) |
 | API Docs | SpringDoc OpenAPI (Swagger UI per service) |
-| Gateway | nginx |
+| Gateway | Spring Cloud Gateway 2025.0.0 |
 | Build | Gradle multi-module (wrapper included) |
 | Runtime | Docker + Docker Compose |
 
@@ -70,7 +70,7 @@ cd scheduler-back
 docker compose up --build
 ```
 
-All services, databases, RabbitMQ, and nginx start together. The API is available at `http://localhost:8080`.
+All services, databases, RabbitMQ, and the gateway start together. The API is available at `http://localhost:8080`.
 
 On first startup each service seeds three sample providers, schedules, and appointments automatically (only if the database is empty).
 
@@ -85,8 +85,9 @@ The following variables are supported in `docker-compose.yml`. Only mail setting
 | `APPOINTMENT_DB_URL` | `jdbc:postgresql://appointment-db:5434/appointment_db` | appointment-service |
 | `DB_USERNAME` | `postgres` | all DB services |
 | `DB_PASSWORD` | `mysecretpassword` | all DB services |
-| `PROVIDER_SERVICE_URL` | `http://provider-service:8081` | schedule-service |
-| `SCHEDULE_SERVICE_URL` | `http://schedule-service:8082` | appointment-service |
+| `PROVIDER_SERVICE_URL` | `http://provider-service:8081` | schedule-service, gateway-service |
+| `SCHEDULE_SERVICE_URL` | `http://schedule-service:8082` | appointment-service, gateway-service |
+| `APPOINTMENT_SERVICE_URL` | `http://appointment-service:8083` | gateway-service |
 | `RABBITMQ_HOST` | `rabbitmq` | appointment-service, notification-service |
 | `MAIL_HOST` | `smtp.gmail.com` | notification-service |
 | `MAIL_PORT` | `587` | notification-service |
@@ -122,7 +123,7 @@ Each service's Swagger UI is available at `http://localhost:{port}/swagger-ui.ht
 
 ## API Reference
 
-All public endpoints are reached through the nginx gateway at `http://localhost:8080`. CORS is enabled for all origins by default.
+All public endpoints are reached through the gateway at `http://localhost:8080`. CORS is enabled for all origins by default.
 
 ---
 
@@ -288,8 +289,13 @@ Validation errors (HTTP 400) additionally include an `errors` array with per-fie
 scheduler-platform/
 ├── build.gradle              # Parent build — applies plugins to all subprojects
 ├── settings.gradle           # Module declarations
-├── docker-compose.yml        # Full stack: 3 DBs + RabbitMQ + 4 services + nginx
-├── nginx.conf                # API gateway routing rules
+├── docker-compose.yml        # Full stack: 3 DBs + RabbitMQ + 5 services
+├── gateway-service/
+│   ├── build.gradle          # Spring Cloud Gateway dependency + BOM
+│   ├── Dockerfile
+│   └── src/main/
+│       ├── java/com/example/gateway/GatewayApplication.java
+│       └── resources/application.yaml   # Route definitions
 ├── provider-service/
 │   ├── build.gradle
 │   ├── Dockerfile
