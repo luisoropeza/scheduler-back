@@ -3,6 +3,7 @@ package com.example.provider.config;
 import com.example.provider.entity.Provider;
 import com.example.provider.repository.ProviderRepository;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NonNull;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -16,7 +17,7 @@ public class DataSeeder implements ApplicationRunner {
 
     @Override
     @Transactional
-    public void run(ApplicationArguments args) {
+    public void run(@NonNull ApplicationArguments args) {
         if (providerRepository.count() > 0) return;
 
         providerRepository.save(Provider.builder()

@@ -4,6 +4,7 @@ import com.example.schedule.entity.Schedule;
 import com.example.schedule.entity.enums.ScheduleStatus;
 import com.example.schedule.repository.ScheduleRepository;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NonNull;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -23,7 +24,7 @@ public class DataSeeder implements ApplicationRunner {
 
     @Override
     @Transactional
-    public void run(ApplicationArguments args) {
+    public void run(@NonNull ApplicationArguments args) {
         if (scheduleRepository.count() > 0) return;
 
         LocalDateTime base = LocalDateTime.now().withMinute(0).withSecond(0).withNano(0);

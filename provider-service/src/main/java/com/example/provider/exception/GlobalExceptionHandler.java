@@ -25,9 +25,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusiness(BusinessException ex) {
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT).body(
                 ErrorResponse.builder()
-                        .status(HttpStatus.UNPROCESSABLE_ENTITY.value())
+                        .status(HttpStatus.UNPROCESSABLE_CONTENT.value())
                         .message(ex.getMessage())
                         .timestamp(LocalDateTime.now())
                         .build());

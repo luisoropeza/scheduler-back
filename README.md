@@ -6,13 +6,13 @@ A healthcare appointment scheduling platform built as a microservices system. Pr
 
 ```
                   ┌──────────────────────────────────────────────────────────────────┐
-                  │               gateway-service  :8080  (Spring Cloud Gateway)     │
+                  │               gateway-service  :8080  (WebFlux reverse proxy)    │
                   │  /api/providers/{id}/schedules/**  → schedule-service            │
                   │  /api/providers/**                 → provider-service            │
                   │  /api/appointments/**              → appointment-service         │
-                  └──────────┬──────────────────┬───────────────────┬───────────────┘
+                  └──────────┬──────────────────┬───────────────────┬────────────────┘
                              │                  │                   │
-                    ┌────────┘          ┌───────┘           ┌──────┘
+                    ┌────────┘          ┌───────┘            ┌──────┘
                     ▼                   ▼                    ▼
            provider-service     schedule-service     appointment-service
                :8081                 :8082                 :8083
@@ -35,7 +35,7 @@ A healthcare appointment scheduling platform built as a microservices system. Pr
 | **schedule-service** | 8082 | Time slot management, public + internal APIs |
 | **appointment-service** | 8083 | Booking, confirmation, cancellation; publishes RabbitMQ events |
 | **notification-service** | 8084 | Consumes booking events, sends HTML confirmation emails |
-| **gateway-service** | 8080 | Spring Cloud Gateway — path-based routing, single public entry point |
+| **gateway-service** | 8080 | WebFlux reverse proxy — path-based routing, single public entry point |
 
 Each service owns its own PostgreSQL database. Cross-service data is denormalized at write time (no cross-service JPA relationships). Appointment booking events are delivered to notification-service via RabbitMQ, so email failures never roll back a booking.
 
@@ -53,7 +53,7 @@ Each service owns its own PostgreSQL database. Cross-service data is denormalize
 | Validation | Spring Validation (Jakarta) |
 | Email | Spring Mail (SMTP) |
 | API Docs | SpringDoc OpenAPI (Swagger UI per service) |
-| Gateway | Spring Cloud Gateway 2025.0.0 |
+| Gateway | Spring WebFlux (WebClient reverse proxy) |
 | Build | Gradle multi-module (wrapper included) |
 | Runtime | Docker + Docker Compose |
 
@@ -80,11 +80,9 @@ The following variables are supported in `docker-compose.yml`. Only mail setting
 
 | Variable | Default | Used by |
 |---|---|---|
-| `PROVIDER_DB_URL` | `jdbc:postgresql://provider-db:5432/provider_db` | provider-service |
-| `SCHEDULE_DB_URL` | `jdbc:postgresql://schedule-db:5433/schedule_db` | schedule-service |
-| `APPOINTMENT_DB_URL` | `jdbc:postgresql://appointment-db:5434/appointment_db` | appointment-service |
-| `DB_USERNAME` | `postgres` | all DB services |
-| `DB_PASSWORD` | `mysecretpassword` | all DB services |
+| `DB_URL` | *(service-specific postgres URL)* | provider, schedule, appointment services |
+| `DB_USERNAME` | `postgres` | provider, schedule, appointment services |
+| `DB_PASSWORD` | `mysecretpassword` | provider, schedule, appointment services |
 | `PROVIDER_SERVICE_URL` | `http://provider-service:8081` | schedule-service, gateway-service |
 | `SCHEDULE_SERVICE_URL` | `http://schedule-service:8082` | appointment-service, gateway-service |
 | `APPOINTMENT_SERVICE_URL` | `http://appointment-service:8083` | gateway-service |
@@ -116,7 +114,7 @@ The following variables are supported in `docker-compose.yml`. Only mail setting
 ./gradlew test
 
 # Run a single test class
-./gradlew test --tests "com.example.provider.SomeTest"
+./gradlew :provider-service:test --tests "com.example.provider.SomeTest"
 ```
 
 Each service's Swagger UI is available at `http://localhost:{port}/swagger-ui.html` when running individually.
@@ -291,11 +289,12 @@ scheduler-platform/
 ├── settings.gradle           # Module declarations
 ├── docker-compose.yml        # Full stack: 3 DBs + RabbitMQ + 5 services
 ├── gateway-service/
-│   ├── build.gradle          # Spring Cloud Gateway dependency + BOM
+│   ├── build.gradle          # spring-boot-starter-webflux
 │   ├── Dockerfile
-│   └── src/main/
-│       ├── java/com/example/gateway/GatewayApplication.java
-│       └── resources/application.yaml   # Route definitions
+│   └── src/main/java/com/example/gateway/
+│       ├── GatewayApplication.java
+│       ├── config/           # WebClientConfig, GatewayProperties
+│       └── filter/           # RoutingFilter (WebFilter proxy)
 ├── provider-service/
 │   ├── build.gradle
 │   ├── Dockerfile

@@ -1,9 +1,8 @@
 package com.example.gateway.filter;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.Ordered;
+import com.example.gateway.config.GatewayProperties;
+import org.jspecify.annotations.NonNull;
 import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
@@ -11,86 +10,66 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
-import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
-import java.net.URI;
+import java.util.Set;
 
 @Component
-public class RoutingFilter implements WebFilter, Ordered {
+public class RoutingFilter implements WebFilter {
+
+    private static final Set<String> EXCLUDED_REQUEST_HEADERS = Set.of("host", "content-length");
+    private static final Set<String> EXCLUDED_RESPONSE_HEADERS = Set.of("transfer-encoding", "connection");
 
     private final WebClient webClient;
-    private final String providerUrl;
-    private final String scheduleUrl;
-    private final String appointmentUrl;
+    private final GatewayProperties properties;
 
-    public RoutingFilter(
-            WebClient webClient,
-            @Value("${PROVIDER_SERVICE_URL:http://localhost:8081}") String providerUrl,
-            @Value("${SCHEDULE_SERVICE_URL:http://localhost:8082}") String scheduleUrl,
-            @Value("${APPOINTMENT_SERVICE_URL:http://localhost:8083}") String appointmentUrl) {
-        this.webClient = webClient;
-        this.providerUrl = providerUrl;
-        this.scheduleUrl = scheduleUrl;
-        this.appointmentUrl = appointmentUrl;
+    public RoutingFilter(WebClient.Builder webClientBuilder, GatewayProperties properties) {
+        this.webClient = webClientBuilder.build();
+        this.properties = properties;
     }
 
     @Override
-    public int getOrder() {
-        return Ordered.LOWEST_PRECEDENCE;
-    }
-
-    @Override
-    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        String path = exchange.getRequest().getPath().value();
-        String targetBase = resolveTarget(path);
-        if (targetBase == null) {
+    public Mono<Void> filter(@NonNull ServerWebExchange exchange, @NonNull WebFilterChain chain) {
+        String path = exchange.getRequest().getURI().getPath();
+        String targetBaseUrl = resolveTargetUrl(path);
+        if (targetBaseUrl == null) {
             return chain.filter(exchange);
         }
-        return forward(exchange, targetBase);
+        return proxy(exchange, targetBaseUrl);
     }
 
-    private String resolveTarget(String path) {
-        // Schedule routes checked first — more specific than /api/providers/**
-        if (path.matches("/api/providers/[^/]+/schedules(/.*)?")) {
-            return scheduleUrl;
-        }
-        if (path.startsWith("/api/providers")) {
-            return providerUrl;
-        }
-        if (path.startsWith("/api/appointments")) {
-            return appointmentUrl;
-        }
+    private String resolveTargetUrl(String path) {
+        // Schedule paths share the /api/providers/ prefix — must be checked first
+        if (path.startsWith("/api/providers") && path.contains("/schedules")) return properties.getScheduleServiceUrl();
+        if (path.startsWith("/api/providers")) return properties.getProviderServiceUrl();
+        if (path.startsWith("/api/appointments")) return properties.getAppointmentServiceUrl();
         return null;
     }
 
-    private Mono<Void> forward(ServerWebExchange exchange, String targetBase) {
+    private Mono<Void> proxy(ServerWebExchange exchange, String targetBaseUrl) {
         ServerHttpRequest request = exchange.getRequest();
-        ServerHttpResponse response = exchange.getResponse();
+        String rawPath = request.getURI().getRawPath();
+        String rawQuery = request.getURI().getRawQuery();
+        String targetUri = targetBaseUrl + rawPath + (rawQuery != null ? "?" + rawQuery : "");
 
-        URI targetUri = UriComponentsBuilder.fromUriString(targetBase)
-                .replacePath(request.getPath().value())
-                .replaceQuery(request.getURI().getQuery())
-                .build(true)
-                .toUri();
-
-        return webClient.method(request.getMethod())
-                .uri(targetUri)
-                .headers(h -> {
-                    h.addAll(request.getHeaders());
-                    h.remove(HttpHeaders.HOST);
-                })
-                .body(request.getBody(), DataBuffer.class)
-                .exchangeToMono(clientResponse -> {
-                    response.setStatusCode(clientResponse.statusCode());
-                    clientResponse.headers().asHttpHeaders().forEach((name, values) -> {
-                        // Let the container set these based on actual response body
-                        if (!name.equalsIgnoreCase(HttpHeaders.TRANSFER_ENCODING)
-                                && !name.equalsIgnoreCase(HttpHeaders.CONTENT_LENGTH)) {
-                            response.getHeaders().addAll(name, values);
-                        }
-                    });
-                    return response.writeWith(clientResponse.bodyToFlux(DataBuffer.class));
+        return webClient
+            .method(request.getMethod())
+            .uri(targetUri)
+            .headers(headers -> request.getHeaders().forEach((name, values) -> {
+                if (!EXCLUDED_REQUEST_HEADERS.contains(name.toLowerCase())) {
+                    headers.addAll(name, values);
+                }
+            }))
+            .body(request.getBody(), DataBuffer.class)
+            .exchangeToMono(clientResponse -> {
+                ServerHttpResponse response = exchange.getResponse();
+                response.setStatusCode(clientResponse.statusCode());
+                clientResponse.headers().asHttpHeaders().forEach((name, values) -> {
+                    if (!EXCLUDED_RESPONSE_HEADERS.contains(name.toLowerCase())) {
+                        response.getHeaders().addAll(name, values);
+                    }
                 });
+                return response.writeWith(clientResponse.bodyToFlux(DataBuffer.class));
+            });
     }
 }
