@@ -25,11 +25,11 @@ public class RoutingFilter implements WebFilter, Ordered {
     private final String appointmentUrl;
 
     public RoutingFilter(
-            WebClient.Builder webClientBuilder,
+            WebClient webClient,
             @Value("${PROVIDER_SERVICE_URL:http://localhost:8081}") String providerUrl,
             @Value("${SCHEDULE_SERVICE_URL:http://localhost:8082}") String scheduleUrl,
             @Value("${APPOINTMENT_SERVICE_URL:http://localhost:8083}") String appointmentUrl) {
-        this.webClient = webClientBuilder.build();
+        this.webClient = webClient;
         this.providerUrl = providerUrl;
         this.scheduleUrl = scheduleUrl;
         this.appointmentUrl = appointmentUrl;
