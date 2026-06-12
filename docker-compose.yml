@@ -1,0 +1,141 @@
+services:
+
+  # ── Databases ──────────────────────────────────────────────────────────────
+  provider-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: provider_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  schedule-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: schedule_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  appointment-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: appointment_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Message broker ─────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"       # management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ── Microservices ───────────────────────────────────────────────────────────
+  provider-service:
+    build:
+      context: .
+      dockerfile: provider-service/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      DB_URL: jdbc:postgresql://provider-db:5432/provider_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: mysecretpassword
+    depends_on:
+      provider-db:
+        condition: service_healthy
+
+  schedule-service:
+    build:
+      context: .
+      dockerfile: schedule-service/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      DB_URL: jdbc:postgresql://schedule-db:5432/schedule_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: mysecretpassword
+      PROVIDER_SERVICE_URL: http://provider-service:8081
+    depends_on:
+      schedule-db:
+        condition: service_healthy
+      provider-service:
+        condition: service_started
+
+  appointment-service:
+    build:
+      context: .
+      dockerfile: appointment-service/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      DB_URL: jdbc:postgresql://appointment-db:5432/appointment_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: mysecretpassword
+      SCHEDULE_SERVICE_URL: http://schedule-service:8082
+      RABBITMQ_HOST: rabbitmq
+    depends_on:
+      appointment-db:
+        condition: service_healthy
+      schedule-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-your-email@gmail.com}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-your-app-password}
+      MAIL_FROM: ${MAIL_FROM:-your-email@gmail.com}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Scheduler}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # ── API Gateway (nginx) ─────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - provider-service
+      - schedule-service
+      - appointment-service
