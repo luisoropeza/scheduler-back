@@ -6,7 +6,7 @@ A healthcare appointment scheduling platform built as a microservices system. Pr
 
 ```
                   ┌──────────────────────────────────────────────────────────────────┐
-                  │               gateway-service  :8080  (WebFlux reverse proxy)    │
+                  │               gateway-service  :8080  (Spring Cloud Gateway)       │
                   │  /api/providers/{id}/schedules/**  → schedule-service            │
                   │  /api/providers/**                 → provider-service            │
                   │  /api/appointments/**              → appointment-service         │
@@ -35,7 +35,7 @@ A healthcare appointment scheduling platform built as a microservices system. Pr
 | **schedule-service** | 8082 | Time slot management, public + internal APIs |
 | **appointment-service** | 8083 | Booking, confirmation, cancellation; publishes RabbitMQ events |
 | **notification-service** | 8084 | Consumes booking events, sends HTML confirmation emails |
-| **gateway-service** | 8080 | WebFlux reverse proxy — path-based routing, single public entry point |
+| **gateway-service** | 8080 | Spring Cloud Gateway — path-based routing, single public entry point |
 
 Each service owns its own PostgreSQL database. Cross-service data is denormalized at write time (no cross-service JPA relationships). Appointment booking events are delivered to notification-service via RabbitMQ, so email failures never roll back a booking.
 
@@ -53,7 +53,7 @@ Each service owns its own PostgreSQL database. Cross-service data is denormalize
 | Validation | Spring Validation (Jakarta) |
 | Email | Spring Mail (SMTP) |
 | API Docs | SpringDoc OpenAPI (Swagger UI per service) |
-| Gateway | Spring WebFlux (WebClient reverse proxy) |
+| Gateway | Spring Cloud Gateway 5.x (`spring-cloud-starter-gateway-server-webflux`) |
 | Build | Gradle multi-module (wrapper included) |
 | Runtime | Docker + Docker Compose |
 
@@ -289,12 +289,10 @@ scheduler-platform/
 ├── settings.gradle           # Module declarations
 ├── docker-compose.yml        # Full stack: 3 DBs + RabbitMQ + 5 services
 ├── gateway-service/
-│   ├── build.gradle          # spring-boot-starter-webflux
+│   ├── build.gradle          # spring-cloud-starter-gateway-server-webflux
 │   ├── Dockerfile
 │   └── src/main/java/com/example/gateway/
-│       ├── GatewayApplication.java
-│       ├── config/           # WebClientConfig, GatewayProperties
-│       └── filter/           # RoutingFilter (WebFilter proxy)
+│       └── GatewayApplication.java
 ├── provider-service/
 │   ├── build.gradle
 │   ├── Dockerfile
