@@ -1,17 +1,43 @@
-# Scheduler API
+# Scheduler Platform
 
-A REST API for healthcare appointment scheduling built with Spring Boot. Providers (doctors, specialists, etc.) register their available time slots, and clients book appointments through those slots. Designed to integrate with n8n workflow automation and WhatsApp-based client flows.
+A healthcare appointment scheduling platform built as a microservices system. Providers register available time slots; clients book appointments through those slots. Designed to integrate with n8n workflow automation and WhatsApp-based client flows.
 
-## Features
+## Architecture
 
-- Provider registration and management with optional specialty filtering
-- Time slot management (individual or batch creation)
-- Appointment booking with automatic slot locking
-- Appointment lifecycle: `PENDING` → `CONFIRMED` or `CANCELLED`
-- HTML email notifications sent to clients on booking
-- Soft-delete deactivation for providers
-- Auto-seeded sample data on first startup
-- OpenAPI/Swagger UI at `/swagger-ui.html`
+```
+                        ┌─────────────────────────────────────────────────────┐
+                        │                nginx  :8080                          │
+                        │  /api/providers/{id}/schedules  → schedule-service   │
+                        │  /api/providers                 → provider-service   │
+                        │  /api/appointments              → appointment-service │
+                        └──────────┬──────────┬──────────┬────────────────────┘
+                                   │          │          │
+                    ┌──────────────┘  ┌───────┘  ┌──────┘
+                    ▼                 ▼           ▼
+           provider-service   schedule-service  appointment-service
+               :8081               :8082             :8083
+                  │                   │                  │
+             provider_db         schedule_db        appointment_db
+              (pg :5432)          (pg :5433)          (pg :5434)
+                                                         │
+                                                    RabbitMQ :5672
+                                                         │
+                                               notification-service
+                                                      :8084
+                                                    (SMTP email)
+```
+
+### Services
+
+| Service | Port | Responsibility |
+|---|---|---|
+| **provider-service** | 8081 | Provider CRUD, soft-delete deactivation |
+| **schedule-service** | 8082 | Time slot management, public + internal APIs |
+| **appointment-service** | 8083 | Booking, confirmation, cancellation; publishes RabbitMQ events |
+| **notification-service** | 8084 | Consumes booking events, sends HTML confirmation emails |
+| **nginx** | 8080 | API gateway — single public entry point |
+
+Each service owns its own PostgreSQL database. Cross-service data is denormalized at write time (no cross-service JPA relationships). Appointment booking events are delivered to notification-service via RabbitMQ, so email failures never roll back a booking.
 
 ## Tech Stack
 
@@ -19,87 +45,88 @@ A REST API for healthcare appointment scheduling built with Spring Boot. Provide
 |---|---|
 | Language | Java 26 |
 | Framework | Spring Boot 4.0.6 |
-| Persistence | Spring Data JPA + Hibernate + PostgreSQL |
+| Persistence | Spring Data JPA + PostgreSQL (database-per-service) |
+| Messaging | Spring AMQP + RabbitMQ |
+| HTTP clients | Spring RestClient (synchronous inter-service calls) |
 | Mapping | MapStruct 1.6.3 |
 | Boilerplate | Lombok |
 | Validation | Spring Validation (Jakarta) |
 | Email | Spring Mail (SMTP) |
-| API Docs | SpringDoc OpenAPI 3.0.2 |
-| Build | Gradle (Wrapper included) |
+| API Docs | SpringDoc OpenAPI (Swagger UI per service) |
+| Gateway | nginx |
+| Build | Gradle multi-module (wrapper included) |
+| Runtime | Docker + Docker Compose |
 
-## Prerequisites
+## Quick Start (Docker Compose)
 
-- Java 26+
-- PostgreSQL running locally (or reachable via `DB_URL`)
-- An SMTP server (Gmail with an App Password works out of the box)
+```bash
+# Clone and start everything
+git clone https://github.com/luisoropeza/scheduler-back.git
+cd scheduler-back
 
-## Getting Started
+# Configure mail credentials (required for email notifications)
+# Edit docker-compose.yml and set MAIL_HOST, MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM
 
-### 1. Clone and configure
+docker compose up --build
+```
 
-Copy the environment variables below and set them before running (or let the defaults apply for local development):
+All services, databases, RabbitMQ, and nginx start together. The API is available at `http://localhost:8080`.
 
-| Variable | Default | Description |
+On first startup each service seeds three sample providers, schedules, and appointments automatically (only if the database is empty).
+
+### Environment Variables
+
+The following variables are supported in `docker-compose.yml`. Only mail settings need to be changed for a working local environment.
+
+| Variable | Default | Used by |
 |---|---|---|
-| `DB_URL` | `jdbc:postgresql://localhost:5432/scheduler` | JDBC connection string |
-| `DB_USERNAME` | `postgres` | Database user |
-| `DB_PASSWORD` | `mysecretpassword` | Database password |
-| `MAIL_HOST` | `smtp.gmail.com` | SMTP host |
-| `MAIL_PORT` | `587` | SMTP port |
-| `MAIL_USERNAME` | `your-email@gmail.com` | SMTP username |
-| `MAIL_PASSWORD` | `your-app-password` | SMTP password / App Password |
-| `MAIL_FROM` | `your-email@gmail.com` | Sender address |
-| `MAIL_FROM_NAME` | `Scheduler` | Sender display name |
-| `CORS_ALLOWED_ORIGINS` | `*` | Allowed CORS origins |
+| `PROVIDER_DB_URL` | `jdbc:postgresql://provider-db:5432/provider_db` | provider-service |
+| `SCHEDULE_DB_URL` | `jdbc:postgresql://schedule-db:5433/schedule_db` | schedule-service |
+| `APPOINTMENT_DB_URL` | `jdbc:postgresql://appointment-db:5434/appointment_db` | appointment-service |
+| `DB_USERNAME` | `postgres` | all DB services |
+| `DB_PASSWORD` | `mysecretpassword` | all DB services |
+| `PROVIDER_SERVICE_URL` | `http://provider-service:8081` | schedule-service |
+| `SCHEDULE_SERVICE_URL` | `http://schedule-service:8082` | appointment-service |
+| `RABBITMQ_HOST` | `rabbitmq` | appointment-service, notification-service |
+| `MAIL_HOST` | `smtp.gmail.com` | notification-service |
+| `MAIL_PORT` | `587` | notification-service |
+| `MAIL_USERNAME` | `your-email@gmail.com` | notification-service |
+| `MAIL_PASSWORD` | `your-app-password` | notification-service |
+| `MAIL_FROM` | `your-email@gmail.com` | notification-service |
+| `MAIL_FROM_NAME` | `Scheduler` | notification-service |
+| `CORS_ALLOWED_ORIGINS` | `*` | provider, schedule, appointment |
 
-### 2. Create the database
-
-```sql
-CREATE DATABASE scheduler;
-```
-
-Hibernate will create and update the schema automatically on startup (`ddl-auto: update`).
-
-### 3. Run
+## Development Build
 
 ```bash
-./gradlew bootRun
-```
+# Compile all services
+./gradlew compileJava
 
-The API will be available at `http://localhost:8080`.  
-Swagger UI: `http://localhost:8080/swagger-ui.html`
-
-On first startup, three sample providers with schedules and appointments are seeded automatically (only if the database is empty).
-
-## Build Commands
-
-```bash
-# Full build (compiles, tests, packages)
+# Build all JARs
 ./gradlew build
 
-# Run the application
-./gradlew bootRun
+# Build a single service
+./gradlew :schedule-service:bootJar
 
-# Run all tests
+# Run a single service (requires external Postgres + RabbitMQ)
+./gradlew :provider-service:bootRun
+
+# Run tests
 ./gradlew test
 
 # Run a single test class
-./gradlew test --tests "com.example.scheduler.SomeTest"
-
-# Run a single test method
-./gradlew test --tests "com.example.scheduler.SomeTest.methodName"
-
-# Compile without running tests
-./gradlew compileJava
+./gradlew test --tests "com.example.provider.SomeTest"
 ```
+
+Each service's Swagger UI is available at `http://localhost:{port}/swagger-ui.html` when running individually.
 
 ## API Reference
 
-All endpoints are prefixed with `/api`. CORS is enabled for all origins by default.
+All public endpoints are reached through the nginx gateway at `http://localhost:8080`. CORS is enabled for all origins by default.
 
 ---
 
-### Providers `/api/providers`
+### Providers  `→ provider-service`
 
 | Method | Path | Description |
 |---|---|---|
@@ -133,11 +160,11 @@ All endpoints are prefixed with `/api`. CORS is enabled for all origins by defau
 
 ---
 
-### Schedules `/api/providers/{providerId}/schedules`
+### Schedules  `→ schedule-service`
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/providers/{providerId}/schedules/available` | List future `AVAILABLE` slots for a provider (used by n8n to present options to clients). |
+| `GET` | `/api/providers/{providerId}/schedules/available` | List future `AVAILABLE` slots for a provider. |
 | `GET` | `/api/providers/{providerId}/schedules` | List all slots (available and booked). |
 | `POST` | `/api/providers/{providerId}/schedules` | Add a single time slot. |
 | `POST` | `/api/providers/{providerId}/schedules/batch` | Add multiple time slots at once. |
@@ -147,7 +174,7 @@ All endpoints are prefixed with `/api`. CORS is enabled for all origins by defau
 ```json
 {
   "startTime": "2026-06-15T09:00:00",
-  "endTime": "2026-06-15T10:00:00"
+  "endTime":   "2026-06-15T10:00:00"
 }
 ```
 
@@ -161,23 +188,23 @@ All endpoints are prefixed with `/api`. CORS is enabled for all origins by defau
   "providerName": "Dr. Ana García",
   "providerSpecialty": "General Medicine",
   "startTime": "2026-06-15T09:00:00",
-  "endTime": "2026-06-15T10:00:00",
+  "endTime":   "2026-06-15T10:00:00",
   "status": "AVAILABLE"
 }
 ```
 
 ---
 
-### Appointments `/api/appointments`
+### Appointments  `→ appointment-service`
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/appointments` | Book an appointment on an available slot (called by n8n after slot selection). Triggers email notification. |
+| `POST` | `/api/appointments` | Book an appointment on an available slot. Triggers async email notification. |
 | `GET` | `/api/appointments/{id}` | Get appointment details by ID. |
-| `GET` | `/api/appointments?phone={phone}` | List all appointments for a client phone number (used by WhatsApp flow). |
+| `GET` | `/api/appointments?phone={phone}` | List all appointments for a client phone number. |
 | `GET` | `/api/appointments/provider/{providerId}?status=` | List appointments for a provider. Default status: `CONFIRMED`. |
 | `PATCH` | `/api/appointments/{id}/confirm` | Confirm a `PENDING` appointment. |
-| `PATCH` | `/api/appointments/{id}/cancel` | Cancel an appointment and release the time slot back to `AVAILABLE`. |
+| `PATCH` | `/api/appointments/{id}/cancel` | Cancel an appointment and release the slot back to `AVAILABLE`. |
 
 **AppointmentRequest**
 ```json
@@ -195,8 +222,9 @@ All endpoints are prefixed with `/api`. CORS is enabled for all origins by defau
 {
   "id": 1,
   "scheduleId": 5,
+  "providerId": 1,
   "scheduleStart": "2026-06-15T09:00:00",
-  "scheduleEnd": "2026-06-15T10:00:00",
+  "scheduleEnd":   "2026-06-15T10:00:00",
   "providerName": "Dr. Ana García",
   "providerSpecialty": "General Medicine",
   "clientName": "John Doe",
@@ -204,7 +232,7 @@ All endpoints are prefixed with `/api`. CORS is enabled for all origins by defau
   "clientEmail": "john.doe@example.com",
   "status": "PENDING",
   "notes": "Annual check-up",
-  "createdAt": "2026-06-09T14:32:00"
+  "createdAt": "2026-06-12T14:32:00"
 }
 ```
 
@@ -220,74 +248,93 @@ PENDING ──► CONFIRMED
 
 - New appointments start as `PENDING`.
 - Only `PENDING` appointments can be confirmed.
-- Cancelling an appointment returns its time slot to `AVAILABLE`, allowing rebooking.
-
----
-
-## Error Responses
-
-All errors return a consistent JSON structure:
-
-```json
-{
-  "timestamp": "2026-06-09T14:00:00",
-  "status": 404,
-  "message": "Provider not found with id: 99"
-}
-```
-
-Validation errors (HTTP 400) include a `fieldErrors` map with per-field messages.
-
-| HTTP Status | Cause |
-|---|---|
-| `400` | Invalid request body / failed bean validation |
-| `404` | Resource not found (`ResourceNotFoundException`) |
-| `422` | Business rule violation (e.g., booking a booked slot, confirming a non-pending appointment) |
+- Cancelling an appointment returns its slot to `AVAILABLE`, allowing rebooking.
 
 ---
 
 ## Email Notifications
 
-When an appointment is booked, an HTML confirmation email is automatically sent to the client's email address (if provided). The email includes:
+When an appointment is booked, appointment-service publishes an `AppointmentBookedEvent` to RabbitMQ. notification-service consumes it and sends an HTML confirmation email to the client (if an email address was provided). The email includes the provider name and specialty, appointment date and time, and any notes.
 
-- Patient name
-- Provider name and specialty
-- Appointment date and time
-- Notes (if any)
-- A green **CONFIRMED** status badge
-
-Email failures are logged but do not fail the booking request.
+Email delivery is fully decoupled from the booking transaction — a mail failure has no effect on the appointment record.
 
 ---
 
-## Data Model
+## Error Responses
 
+All services return the same error structure:
+
+```json
+{
+  "timestamp": "2026-06-12T14:00:00",
+  "status": 404,
+  "message": "Schedule not found with id: 99"
+}
 ```
-Provider ──< Schedule >── Appointment
-```
 
-- A **Provider** has many **Schedules** (time slots).
-- Each **Schedule** has at most one **Appointment** (one-to-one).
-- Deleting a provider cascades to its schedules.
+Validation errors (HTTP 400) additionally include an `errors` array with per-field messages.
 
-### Enums
-
-**`ScheduleStatus`**: `AVAILABLE`, `BOOKED`
-
-**`AppointmentStatus`**: `PENDING`, `CONFIRMED`, `CANCELLED`
+| HTTP Status | Cause |
+|---|---|
+| `400` | Invalid request body / failed bean validation |
+| `404` | Resource not found |
+| `422` | Business rule violation (e.g., booking an already-booked slot) |
 
 ---
 
 ## Project Structure
 
 ```
-src/main/java/com/example/scheduler/
-├── controller/      # REST controllers (@RestController)
-├── service/         # Business logic interfaces + implementations (@Service)
-├── repository/      # Spring Data JPA repositories (@Repository)
-├── entity/          # JPA entities (@Entity)
-├── dto/             # Request/response DTOs
-├── mapper/          # MapStruct mapper interfaces
-├── exception/       # Custom exceptions + GlobalExceptionHandler
-└── config/          # CORS, mail, and other configuration
+scheduler-platform/
+├── build.gradle              # Parent build — applies plugins to all subprojects
+├── settings.gradle           # Module declarations
+├── docker-compose.yml        # Full stack: 3 DBs + RabbitMQ + 4 services + nginx
+├── nginx.conf                # API gateway routing rules
+├── provider-service/
+│   ├── build.gradle
+│   ├── Dockerfile
+│   └── src/main/java/com/example/provider/
+│       ├── controller/       # ProviderController
+│       ├── service/          # ProviderService + impl
+│       ├── repository/       # ProviderRepository
+│       ├── entity/           # Provider
+│       ├── dto/              # ProviderRequest, ProviderResponse
+│       ├── mapper/           # ProviderMapper (MapStruct)
+│       ├── exception/        # GlobalExceptionHandler, custom exceptions
+│       └── config/           # WebConfig, DataSeeder
+├── schedule-service/
+│   ├── build.gradle
+│   ├── Dockerfile
+│   └── src/main/java/com/example/schedule/
+│       ├── controller/       # ScheduleController (public), ScheduleInternalController (internal)
+│       ├── service/
+│       ├── repository/
+│       ├── entity/
+│       ├── dto/
+│       ├── mapper/
+│       ├── client/           # ProviderClient (RestClient → provider-service)
+│       ├── exception/
+│       └── config/
+├── appointment-service/
+│   ├── build.gradle
+│   ├── Dockerfile
+│   └── src/main/java/com/example/appointment/
+│       ├── controller/       # AppointmentController
+│       ├── service/
+│       ├── repository/
+│       ├── entity/
+│       ├── dto/
+│       ├── mapper/
+│       ├── client/           # ScheduleClient (RestClient → schedule-service internal API)
+│       ├── event/            # AppointmentBookedEvent (RabbitMQ payload)
+│       ├── exception/
+│       └── config/           # RabbitConfig, WebConfig, DataSeeder
+└── notification-service/
+    ├── build.gradle
+    ├── Dockerfile
+    └── src/main/java/com/example/notification/
+        ├── listener/         # AppointmentEventListener (@RabbitListener)
+        ├── service/          # NotificationService + impl (email builder)
+        ├── event/            # AppointmentBookedEvent (copy)
+        └── config/           # RabbitConfig, MailProperties
 ```
