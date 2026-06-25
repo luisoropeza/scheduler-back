@@ -1,0 +1,156 @@
+services:
+
+  # ── Databases ──────────────────────────────────────────────────────────────
+  user-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  schedule-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: schedule_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  appointment-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: appointment_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Message broker ─────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ── Microservices ───────────────────────────────────────────────────────────
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      DB_URL: jdbc:postgresql://user-db:5432/user_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: mysecretpassword
+      CORS_ALLOWED_ORIGINS: "*"
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      user-db:
+        condition: service_healthy
+
+  schedule-service:
+    build:
+      context: .
+      dockerfile: schedule-service/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      DB_URL: jdbc:postgresql://schedule-db:5432/schedule_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: mysecretpassword
+      PERSONAL_SERVICE_URL: http://user-service:8081
+      CORS_ALLOWED_ORIGINS: "*"
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      schedule-db:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+
+  appointment-service:
+    build:
+      context: .
+      dockerfile: appointment-service/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      DB_URL: jdbc:postgresql://appointment-db:5432/appointment_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: mysecretpassword
+      SCHEDULE_SERVICE_URL: http://schedule-service:8082
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      CORS_ALLOWED_ORIGINS: "*"
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      appointment-db:
+        condition: service_healthy
+      schedule-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Scheduler}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: gateway-service/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      USER_SERVICE_URL: http://user-service:8081
+      SCHEDULE_SERVICE_URL: http://schedule-service:8082
+      APPOINTMENT_SERVICE_URL: http://appointment-service:8083
+    depends_on:
+      - user-service
+      - schedule-service
+      - appointment-service

@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: schedule-service
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8082
+
+services:
+  personal-service:
+    url: ${PERSONAL_SERVICE_URL}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+security:
+  public-paths: /internal/**
