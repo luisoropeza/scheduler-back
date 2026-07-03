@@ -45,7 +45,7 @@ class PersonalServiceImplTest {
     private PersonalServiceImpl personalService;
 
     private Specialty cardiology() {
-        return Specialty.builder().id(10L).specialty("Cardiology").build();
+        return Specialty.builder().id(10L).name("Cardiology").build();
     }
 
     private Personal activeDoctor() {

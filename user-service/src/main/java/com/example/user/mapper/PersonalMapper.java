@@ -11,7 +11,7 @@ import java.util.List;
 @Mapper(componentModel = "spring")
 public interface PersonalMapper {
     @Mapping(target = "roleName", expression = "java(personal.getRole().name())")
-    @Mapping(target = "specialtyName", source = "specialty.specialty")
+    @Mapping(target = "specialtyName", source = "specialty.name")
     PersonalResponse toResponse(Personal personal);
     @Mapping(target = "password", ignore = true)
     @Mapping(target = "specialty", ignore = true)
@@ -23,6 +23,6 @@ public interface PersonalMapper {
     @Mapping(target = "email", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void toEntityUpdated(PersonalRequest request, @MappingTarget Personal personal);
     @Mapping(target = "roleName", expression = "java(personal.getRole().name())")
-    @Mapping(target = "specialtyName", source = "specialty.specialty")
+    @Mapping(target = "specialtyName", source = "specialty.name")
     List<PersonalResponse> toResponseList(List<Personal> personals);
 }

@@ -102,7 +102,7 @@ class PersonalAuthServiceTest {
     void register_doctorWithSpecialty_assignsSpecialty() {
         PersonalRegisterRequest request = registerRequest();
         request.setSpecialtyId(10L);
-        Specialty specialty = Specialty.builder().id(10L).specialty("Cardiology").build();
+        Specialty specialty = Specialty.builder().id(10L).name("Cardiology").build();
         Personal entity = Personal.builder().id(1L).role(ERole.DOCTOR).build();
 
         when(personalRepository.findByEmail("dr@clinic.com")).thenReturn(Optional.empty());

@@ -33,9 +33,9 @@ public class DataSeeder implements ApplicationRunner {
         }
         if (personalRepository.count() == 0) {
             String pwd = passwordEncoder.encode("password123");
-            Specialty gm = specialtyRepository.findBySpecialtyIgnoreCase("General Medicine").orElseThrow();
-            Specialty dent = specialtyRepository.findBySpecialtyIgnoreCase("Dentistry").orElseThrow();
-            Specialty peds = specialtyRepository.findBySpecialtyIgnoreCase("Pediatrics").orElseThrow();
+            Specialty gm = specialtyRepository.findByNameIgnoreCase("General Medicine").orElseThrow();
+            Specialty dent = specialtyRepository.findByNameIgnoreCase("Dentistry").orElseThrow();
+            Specialty peds = specialtyRepository.findByNameIgnoreCase("Pediatrics").orElseThrow();
             personalRepository.save(Personal.builder().name("Dr. Ana García").email("ana.garcia@clinic.com").password(pwd).role(ERole.DOCTOR).specialty(gm).build());
             personalRepository.save(Personal.builder().name("Dr. Carlos Méndez").email("carlos.mendez@clinic.com").password(pwd).role(ERole.DOCTOR).specialty(dent).build());
             personalRepository.save(Personal.builder().name("Dr. Laura Torres").email("laura.torres@clinic.com").password(pwd).role(ERole.DOCTOR).specialty(peds).build());
