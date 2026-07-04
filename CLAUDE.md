@@ -65,15 +65,21 @@ Tokens expire after 24 hours.
 - **Lombok** `@Builder`, `@Data`, `@RequiredArgsConstructor` throughout.
 - Service impls use `@Transactional(readOnly = true)` at class level; write methods override with `@Transactional`.
 - `BusinessException` → HTTP 422, `ResourceNotFoundException` → HTTP 404; handled by `GlobalExceptionHandler` in each service.
-- Note: each service currently has its own copy of `JwtAuthFilter`, `JwtUtil`, `BusinessException`, `GlobalExceptionHandler`, etc. The README describes a planned `common` library, but it does not exist yet — changes to these classes must be applied per-service.
+- Note: there is no shared `common` module — each service has its own copy of `JwtAuthFilter`, `JwtUtil`, `BusinessException`, `GlobalExceptionHandler`, etc. Changes to these classes must be applied per-service.
 
 ## Required Environment Variables
 
+Per-service, when running standalone (not via `docker compose`, which sets these to container hostnames itself):
+
 | Variable | Used by |
 |---|---|
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | user, schedule, appointment services (own Postgres each) |
+| `CORS_ALLOWED_ORIGINS` | user, schedule, appointment services |
 | `JWT_SECRET` (min 32 chars) | user, schedule, appointment services |
-| `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM` | notification-service |
-| `USER_SERVICE_URL`, `SCHEDULE_SERVICE_URL`, `APPOINTMENT_SERVICE_URL` | gateway + client services |
-| `RABBITMQ_HOST` | appointment-service, notification-service |
+| `PERSONAL_SERVICE_URL` | schedule-service (calls user-service) |
+| `SCHEDULE_SERVICE_URL` | appointment-service (calls schedule-service), gateway-service |
+| `USER_SERVICE_URL`, `APPOINTMENT_SERVICE_URL` | gateway-service |
+| `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` | appointment-service, notification-service |
+| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM`, `MAIL_FROM_NAME` | notification-service |
 
-Copy `.env.example` as a starting point.
+Copy `.env.example` as a starting point (covers JWT + mail vars only — DB/service-URL/RabbitMQ vars are set inline in `docker-compose.yml`).

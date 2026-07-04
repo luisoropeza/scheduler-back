@@ -11,7 +11,7 @@ A healthcare appointment scheduling platform built as a microservices system. Me
                   │  /api/personal/**                  → user-service                   │
                   │  /api/patients/**                  → user-service                   │
                   │  /api/specialties/**               → user-service                   │
-                  │  /api/schedules/available          → schedule-service               │
+                  │  /api/schedules                    → schedule-service               │
                   │  /api/personal/{id}/schedules/**   → schedule-service               │
                   │  /api/appointments/**              → appointment-service            │
                   └──────┬──────────────────────┬────────────────┬──────────────────────┘
@@ -35,14 +35,14 @@ A healthcare appointment scheduling platform built as a microservices system. Me
 | Service | Port | Responsibility |
 |---|---|---|
 | **user-service** | 8081 | Staff and patient management, doctor-patient M:N relationships, specialty lookup, JWT auth for both staff and patients |
-| **schedule-service** | 8082 | Time slot management; public browse with filters + doctor-owned slot CRUD; internal book/release API |
+| **schedule-service** | 8082 | Time slot management; browse with filters + doctor-owned slot CRUD; internal book/release API |
 | **appointment-service** | 8083 | Booking, confirmation, cancellation, and rescheduling; publishes RabbitMQ events |
 | **notification-service** | 8084 | Consumes appointment events, sends HTML emails to the correct party |
 | **gateway-service** | 8080 | Spring Cloud Gateway — path-based routing, single public entry point |
 
 Each service owns its own PostgreSQL database. Cross-service data is denormalized at write time (no cross-service JPA relationships). Appointment events are delivered to notification-service via RabbitMQ, so email failures never roll back a booking.
 
-> **Note:** `appointment-service` also calls `schedule-service` directly via an internal API (`/internal/schedules/**`) that is not routed through the gateway. Each service contains its own copy of `JwtAuthFilter`, `JwtUtil`, `GlobalExceptionHandler`, and shared exception classes — there is no shared `common` library yet.
+> **Note:** `appointment-service` also calls `schedule-service` directly via an internal API (`/internal/schedules/**`) that is not routed through the gateway. Each service contains its own copy of `JwtAuthFilter`, `JwtUtil`, `GlobalExceptionHandler`, and shared exception classes — there is no shared `common` library.
 
 ## Tech Stack
 
@@ -80,16 +80,17 @@ docker compose up --build
 
 All services, databases, RabbitMQ, and the gateway start together. The API is available at `http://localhost:8080`.
 
-On first startup each service seeds sample data: 2 staff roles (DOCTOR, RECEPTIONIST), 3 specialties, 3 doctors, 1 receptionist, and 3 patients with several schedule slots.
+On first startup each service seeds sample data: 3 specialties, 3 doctors + 1 receptionist, 3 patients with several schedule slots (some already booked), and two sample appointments.
 
 ### Environment Variables
 
 | Variable | Default | Used by |
 |---|---|---|
 | `JWT_SECRET` | *(required — min 32 chars)* | user, schedule, appointment services |
-| `USER_SERVICE_URL` | `http://user-service:8081` | schedule-service, gateway-service |
+| `USER_SERVICE_URL` | `http://user-service:8081` | gateway-service |
 | `SCHEDULE_SERVICE_URL` | `http://schedule-service:8082` | appointment-service, gateway-service |
 | `APPOINTMENT_SERVICE_URL` | `http://appointment-service:8083` | gateway-service |
+| `PERSONAL_SERVICE_URL` | `http://user-service:8081` | schedule-service |
 | `RABBITMQ_HOST` | `rabbitmq` | appointment-service, notification-service |
 | `MAIL_HOST` | `smtp.gmail.com` | notification-service |
 | `MAIL_PORT` | `587` | notification-service |
@@ -125,7 +126,7 @@ Each service's Swagger UI is available at `http://localhost:{port}/swagger-ui.ht
 
 ## Authentication
 
-There are two separate auth flows — both handled by user-service. Both issue JWTs signed with the same `JWT_SECRET`, validated in schedule-service and appointment-service.
+There are two separate auth flows — both handled by user-service. Both issue JWTs signed with the same `JWT_SECRET`, validated locally in schedule-service and appointment-service.
 
 ### Staff (Personal) Auth
 
@@ -196,62 +197,46 @@ Authorization: Bearer <jwt>
 
 Tokens expire after **24 hours**.
 
-### Access Rules
+### Public paths per service
 
-| Endpoint | Auth required |
+Each service permits a fixed, comma-separated list of path patterns (`security.public-paths` in its `application.yaml`); every other request must carry a valid Bearer JWT.
+
+| Service | `security.public-paths` |
 |---|---|
-| `GET /api/personal`, `GET /api/personal/{id}` | Public |
-| `GET /api/specialties` | Public |
-| `GET /api/patients`, `GET /api/patients/{id}` | Public |
-| `GET /api/personal/{id}/patients` | Public |
-| `GET /api/patients/{id}/doctors` | Public |
-| `GET /api/schedules` | Public |
-| `GET /api/appointments/{id}` | Public |
-| `GET /api/appointments/client/{clientId}` | Public |
-| `POST /api/auth/**` | Public |
-| `POST /api/appointments` | Public (n8n flow) |
-| `PUT /api/personal/{id}`, `DELETE /api/personal/{id}` | JWT |
-| `PUT /api/patients/{id}`, `DELETE /api/patients/{id}` | JWT |
-| `POST /api/personal/{id}/schedules` | JWT |
-| `POST /api/personal/{id}/schedules/batch` | JWT |
-| `DELETE /api/personal/{id}/schedules/{scheduleId}` | JWT |
-| `POST /api/personal/{doctorId}/patients/{patientId}` | JWT |
-| `DELETE /api/personal/{doctorId}/patients/{patientId}` | JWT |
-| `GET /api/appointments/personal/{personalId}` | JWT |
-| `PATCH /api/appointments/{id}/confirm` | JWT |
-| `PATCH /api/appointments/{id}/cancel` | JWT |
-| `PATCH /api/appointments/{id}/reschedule` | JWT |
+| user-service | `/api/auth/**` |
+| schedule-service | `/internal/**` (internal only — not gateway-routed) |
+| appointment-service | *(none configured — every `/api/appointments/**` route requires a JWT)* |
+
+`/api/appointments/{id}/confirm`, `/cancel`, and `/reschedule` additionally read the caller's id straight from the JWT subject (`Authentication.getName()`), so they need a token issued by user-service regardless of the public-paths setting.
 
 ---
 
 ## API Reference
 
-All public endpoints are reached through the gateway at `http://localhost:8080`.
-
-All list endpoints return a paginated response (`Page<T>`). Pass `?page=0&size=20&sort=fieldName,asc` to control pagination; each endpoint has its own default sort.
+All endpoints are reached through the gateway at `http://localhost:8080`. All list endpoints return a paginated response (`Page<T>`) — pass `?page=0&size=20&sort=fieldName,asc` to control pagination; each endpoint has its own default sort.
 
 ---
 
 ### Auth  `→ user-service`
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/auth/personal/register` | Public | Register a staff account, returns JWT |
-| `POST` | `/api/auth/personal/login` | Public | Login as staff, returns JWT |
-| `POST` | `/api/auth/patient/register` | Public | Register a patient account, returns JWT |
-| `POST` | `/api/auth/patient/login` | Public | Login as patient, returns JWT |
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/auth/personal/register` | Register a staff account, returns JWT |
+| `POST` | `/api/auth/personal/login` | Login as staff, returns JWT |
+| `POST` | `/api/auth/patient/register` | Register a patient account, returns JWT |
+| `POST` | `/api/auth/patient/login` | Login as patient, returns JWT |
 
 ---
 
 ### Personal (Staff)  `→ user-service`
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/personal` | Public | List staff. Filter by `?specialtyId=` and/or `?isActive=`. |
-| `GET` | `/api/personal/{id}` | Public | Get a staff member by ID. |
-| `PUT` | `/api/personal/{id}` | JWT | Update staff information. |
-| `DELETE` | `/api/personal/{id}` | JWT | Deactivate a staff member (soft delete). |
-| `GET` | `/api/specialties` | Public | List all available specialties. |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/personal` | List staff. Filter by `?specialtyId=` and/or `?isActive=`. |
+| `GET` | `/api/personal/{id}` | Get a staff member by ID. |
+| `PUT` | `/api/personal/{id}` | Update staff information. |
+| `DELETE` | `/api/personal/{id}` | Deactivate a staff member (soft delete). |
+| `GET` | `/api/specialties` | List all available specialties. |
 
 **PersonalResponse**
 ```json
@@ -269,12 +254,12 @@ All list endpoints return a paginated response (`Page<T>`). Pass `?page=0&size=2
 
 ### Patients  `→ user-service`
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/patients` | Public | List all patients (paginated). |
-| `GET` | `/api/patients/{id}` | Public | Get a patient by ID. |
-| `PUT` | `/api/patients/{id}` | JWT | Update patient information. |
-| `DELETE` | `/api/patients/{id}` | JWT | Deactivate a patient (soft delete). |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/patients` | List all active patients (paginated). |
+| `GET` | `/api/patients/{id}` | Get a patient by ID. |
+| `PUT` | `/api/patients/{id}` | Update patient information. |
+| `DELETE` | `/api/patients/{id}` | Deactivate a patient (soft delete). |
 
 **PatientResponse**
 ```json
@@ -291,23 +276,23 @@ All list endpoints return a paginated response (`Page<T>`). Pass `?page=0&size=2
 
 ### Doctor-Patient Relationships  `→ user-service`
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/personal/{doctorId}/patients/{patientId}` | JWT | Assign a patient to a doctor. |
-| `DELETE` | `/api/personal/{doctorId}/patients/{patientId}` | JWT | Remove a patient from a doctor. |
-| `GET` | `/api/personal/{doctorId}/patients` | Public | List all patients assigned to a doctor. |
-| `GET` | `/api/patients/{patientId}/doctors` | Public | List all doctors assigned to a patient. |
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/personal/{doctorId}/patients/{patientId}` | Assign a patient to a doctor. |
+| `DELETE` | `/api/personal/{doctorId}/patients/{patientId}` | Remove a patient from a doctor. |
+| `GET` | `/api/personal/{doctorId}/patients` | List all patients assigned to a doctor. |
+| `GET` | `/api/patients/{patientId}/doctors` | List all doctors assigned to a patient. |
 
 ---
 
 ### Schedules  `→ schedule-service`
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/schedules` | Public | Browse time slots. All filters are optional. |
-| `POST` | `/api/personal/{doctorId}/schedules` | JWT | Add a single time slot for a doctor. |
-| `POST` | `/api/personal/{doctorId}/schedules/batch` | JWT | Add multiple time slots at once. |
-| `DELETE` | `/api/personal/{doctorId}/schedules/{scheduleId}` | JWT | Remove a slot (fails if already booked). |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/schedules` | Browse time slots. All filters are optional. |
+| `POST` | `/api/personal/{doctorId}/schedules` | Add a single time slot for a doctor. |
+| `POST` | `/api/personal/{doctorId}/schedules/batch` | Add multiple time slots at once. |
+| `DELETE` | `/api/personal/{doctorId}/schedules/{scheduleId}` | Remove a slot (fails if already booked). |
 
 **GET /api/schedules — query parameters**
 
@@ -344,15 +329,15 @@ All list endpoints return a paginated response (`Page<T>`). Pass `?page=0&size=2
 
 ### Appointments  `→ appointment-service`
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/appointments` | Public | Book an appointment on an available slot. |
-| `GET` | `/api/appointments/{id}` | Public | Get appointment details by ID. |
-| `GET` | `/api/appointments/client/{clientId}` | Public | List all appointments for a patient (paginated). |
-| `GET` | `/api/appointments/personal/{personalId}` | JWT | List appointments for a staff member. Filter by `?status=`. |
-| `PATCH` | `/api/appointments/{id}/confirm` | JWT | Confirm a `PENDING` appointment. |
-| `PATCH` | `/api/appointments/{id}/cancel` | JWT | Cancel an appointment, releases the slot back to `AVAILABLE`. |
-| `PATCH` | `/api/appointments/{id}/reschedule` | JWT | Move an appointment to a different available slot. |
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/appointments` | Book an appointment on an available slot. |
+| `GET` | `/api/appointments/{id}` | Get appointment details by ID. |
+| `GET` | `/api/appointments/client/{clientId}` | List all appointments for a patient (paginated). |
+| `GET` | `/api/appointments/personal/{personalId}` | List appointments for a staff member. Filter by `?status=`. |
+| `PATCH` | `/api/appointments/{id}/confirm` | Confirm a `PENDING` appointment. |
+| `PATCH` | `/api/appointments/{id}/cancel` | Cancel an appointment, releases the slot back to `AVAILABLE`. |
+| `PATCH` | `/api/appointments/{id}/reschedule` | Move an appointment to a different available slot. |
 
 **AppointmentRequest**
 ```json
@@ -376,12 +361,12 @@ All list endpoints return a paginated response (`Page<T>`). Pass `?page=0&size=2
 {
   "id": 1,
   "scheduleId": 5,
-  "personalId": 1,
   "scheduleStart": "2026-07-01T09:00:00",
   "scheduleEnd":   "2026-07-01T10:00:00",
-  "personalName": "Dr. Ana García",
-  "personalSpecialty": "General Medicine",
-  "personalEmail": "ana.garcia@clinic.com",
+  "doctorId": 1,
+  "doctorName": "Dr. Ana García",
+  "doctorSpecialty": "General Medicine",
+  "doctorEmail": "ana.garcia@clinic.com",
   "clientId": 1,
   "clientName": "John Smith",
   "clientEmail": "john.smith@email.com",
@@ -476,7 +461,7 @@ scheduler-platform/
 ├── schedule-service/
 │   └── src/
 │       ├── main/java/com/example/schedule/
-│       │   ├── controller/   # ScheduleController (public browse + doctor CRUD)
+│       │   ├── controller/   # ScheduleController (browse + doctor CRUD)
 │       │   │                 # ScheduleInternalController (/internal/schedules — book/release, not gateway-routed)
 │       │   ├── service/
 │       │   ├── repository/   # ScheduleRepository (single JPQL filter query with pagination)

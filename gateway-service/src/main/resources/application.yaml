@@ -12,7 +12,7 @@ spring:
             - id: schedule-public
               uri: ${SCHEDULE_SERVICE_URL}
               predicates:
-                - Path=/api/schedules/available
+                - Path=/api/schedules
             - id: schedule-service
               uri: ${SCHEDULE_SERVICE_URL}
               predicates:
@@ -20,7 +20,7 @@ spring:
             - id: user-service
               uri: ${USER_SERVICE_URL}
               predicates:
-                - Path=/api/auth/**,/api/personal/**,/api/patients/**,/api/roles/**,/api/specialties/**
+                - Path=/api/auth/**,/api/personal/**,/api/patients/**,/api/specialties/**
             - id: appointment-service
               uri: ${APPOINTMENT_SERVICE_URL}
               predicates:
