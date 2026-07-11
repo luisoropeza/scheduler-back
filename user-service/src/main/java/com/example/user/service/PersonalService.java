@@ -13,7 +13,7 @@ public interface PersonalService {
     PersonalResponse findById(Long id);
     PersonalResponse update(Long id, PersonalRequest request);
     void deactivate(Long id);
-    void assignPatient(Long doctorId, Long patientId);
-    void removePatient(Long doctorId, Long patientId);
+    void assignPatient(Long doctorId, Long patientId, Long userId, String role);
+    void removePatient(Long doctorId, Long patientId, Long userId, String role);
     List<PatientResponse> getPatientsOfDoctor(Long doctorId);
 }

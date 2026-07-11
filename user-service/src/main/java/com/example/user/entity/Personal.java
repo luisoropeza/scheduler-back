@@ -1,6 +1,5 @@
 package com.example.user.entity;
 
-import com.example.user.enums.ERole;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -24,9 +23,9 @@ public class Personal {
     @Column(nullable = false, unique = true)
     private String email;
     private String password;
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ERole role;
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "role_id")
+    private Role role;
     @ManyToOne
     @JoinColumn(name = "specialty_id")
     private Specialty specialty;

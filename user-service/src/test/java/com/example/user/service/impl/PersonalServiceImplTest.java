@@ -5,6 +5,7 @@ import com.example.user.dto.PersonalRequest;
 import com.example.user.dto.PersonalResponse;
 import com.example.user.entity.Patient;
 import com.example.user.entity.Personal;
+import com.example.user.entity.Role;
 import com.example.user.entity.Specialty;
 import com.example.user.enums.ERole;
 import com.example.user.exception.BusinessException;
@@ -13,6 +14,7 @@ import com.example.user.mapper.PatientMapper;
 import com.example.user.mapper.PersonalMapper;
 import com.example.user.repository.PatientRepository;
 import com.example.user.repository.PersonalRepository;
+import com.example.user.repository.RoleRepository;
 import com.example.user.repository.SpecialtyRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +40,7 @@ class PersonalServiceImplTest {
     @Mock private PersonalRepository personalRepository;
     @Mock private PatientRepository patientRepository;
     @Mock private SpecialtyRepository specialtyRepository;
+    @Mock private RoleRepository roleRepository;
     @Mock private PersonalMapper personalMapper;
     @Mock private PatientMapper patientMapper;
 
@@ -48,9 +51,17 @@ class PersonalServiceImplTest {
         return Specialty.builder().id(10L).name("Cardiology").build();
     }
 
+    private Role doctorRole() {
+        return Role.builder().id(1L).name(ERole.DOCTOR.name()).build();
+    }
+
+    private Role receptionistRole() {
+        return Role.builder().id(2L).name(ERole.RECEPTIONIST.name()).build();
+    }
+
     private Personal activeDoctor() {
         return Personal.builder().id(1L).name("Dr. Smith").email("dr@clinic.com")
-                .role(ERole.DOCTOR).active(true).build();
+                .role(doctorRole()).active(true).build();
     }
 
     // --- findAll ---
@@ -138,38 +149,55 @@ class PersonalServiceImplTest {
         personalService.update(1L, request);
 
         verify(personalRepository).save(personal);
-        assertThat(personal.getRole()).isEqualTo(ERole.DOCTOR);
+        assertThat(personal.getRole()).isEqualTo(doctorRole());
     }
 
     @Test
     void update_withRole_setsNewRole() {
         Personal personal = activeDoctor();
         PersonalRequest request = new PersonalRequest();
-        request.setRole(ERole.RECEPTIONIST);
+        request.setRoleId(2L);
 
         when(personalRepository.findById(1L)).thenReturn(Optional.of(personal));
+        when(roleRepository.findById(2L)).thenReturn(Optional.of(receptionistRole()));
         when(personalRepository.save(personal)).thenReturn(personal);
         when(personalMapper.toResponse(personal)).thenReturn(new PersonalResponse());
 
         personalService.update(1L, request);
 
-        assertThat(personal.getRole()).isEqualTo(ERole.RECEPTIONIST);
+        assertThat(personal.getRole()).isEqualTo(receptionistRole());
         assertThat(personal.getSpecialty()).isNull();
     }
 
     @Test
-    void update_switchToReceptionist_clearsSpecialty() {
-        Personal personal = Personal.builder().id(1L).role(ERole.DOCTOR).specialty(cardiology()).active(true).build();
+    void update_roleChangeWithoutSpecialtyId_leavesSpecialtyUnchanged() {
+        Personal personal = Personal.builder().id(1L).role(doctorRole()).specialty(cardiology()).active(true).build();
         PersonalRequest request = new PersonalRequest();
-        request.setRole(ERole.RECEPTIONIST);
+        request.setRoleId(2L);
 
         when(personalRepository.findById(1L)).thenReturn(Optional.of(personal));
+        when(roleRepository.findById(2L)).thenReturn(Optional.of(receptionistRole()));
         when(personalRepository.save(personal)).thenReturn(personal);
         when(personalMapper.toResponse(personal)).thenReturn(new PersonalResponse());
 
         personalService.update(1L, request);
 
-        assertThat(personal.getSpecialty()).isNull();
+        assertThat(personal.getSpecialty()).isEqualTo(cardiology());
+    }
+
+    @Test
+    void update_receptionistWithSpecialtyId_throwsBusinessException() {
+        Personal personal = Personal.builder().id(1L).role(doctorRole()).active(true).build();
+        PersonalRequest request = new PersonalRequest();
+        request.setRoleId(2L);
+        request.setSpecialtyId(10L);
+
+        when(personalRepository.findById(1L)).thenReturn(Optional.of(personal));
+        when(roleRepository.findById(2L)).thenReturn(Optional.of(receptionistRole()));
+
+        assertThatThrownBy(() -> personalService.update(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not have a specialty assigned");
     }
 
     @Test
@@ -234,7 +262,7 @@ class PersonalServiceImplTest {
         when(personalRepository.findById(1L)).thenReturn(Optional.of(doctor));
         when(patientRepository.findById(2L)).thenReturn(Optional.of(patient));
 
-        personalService.assignPatient(1L, 2L);
+        personalService.assignPatient(1L, 2L, 999L, "RECEPTIONIST");
 
         assertThat(doctor.getPatients()).contains(patient);
         verify(personalRepository).save(doctor);
@@ -243,26 +271,16 @@ class PersonalServiceImplTest {
     @Test
     void assignPatient_alreadyAssigned_doesNotDuplicateOrSave() {
         Patient patient = Patient.builder().id(2L).name("Jane").build();
-        Personal doctor = Personal.builder().id(1L).role(ERole.DOCTOR)
+        Personal doctor = Personal.builder().id(1L).role(doctorRole())
                 .patients(new ArrayList<>(List.of(patient))).build();
 
         when(personalRepository.findById(1L)).thenReturn(Optional.of(doctor));
         when(patientRepository.findById(2L)).thenReturn(Optional.of(patient));
 
-        personalService.assignPatient(1L, 2L);
+        personalService.assignPatient(1L, 2L, 999L, "RECEPTIONIST");
 
         assertThat(doctor.getPatients()).hasSize(1);
         verify(personalRepository, never()).save(any());
-    }
-
-    @Test
-    void assignPatient_nonDoctor_throwsBusinessException() {
-        Personal receptionist = Personal.builder().id(1L).role(ERole.RECEPTIONIST).build();
-        when(personalRepository.findById(1L)).thenReturn(Optional.of(receptionist));
-
-        assertThatThrownBy(() -> personalService.assignPatient(1L, 2L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Only doctors");
     }
 
     @Test
@@ -270,7 +288,7 @@ class PersonalServiceImplTest {
         when(personalRepository.findById(1L)).thenReturn(Optional.of(activeDoctor()));
         when(patientRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> personalService.assignPatient(1L, 99L))
+        assertThatThrownBy(() -> personalService.assignPatient(1L, 99L, 999L, "RECEPTIONIST"))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("99");
     }
@@ -280,13 +298,13 @@ class PersonalServiceImplTest {
     @Test
     void removePatient_removesPatientFromListAndSaves() {
         Patient patient = Patient.builder().id(2L).name("Jane").build();
-        Personal doctor = Personal.builder().id(1L).role(ERole.DOCTOR)
+        Personal doctor = Personal.builder().id(1L).role(doctorRole())
                 .patients(new ArrayList<>(List.of(patient))).build();
 
         when(personalRepository.findById(1L)).thenReturn(Optional.of(doctor));
         when(patientRepository.findById(2L)).thenReturn(Optional.of(patient));
 
-        personalService.removePatient(1L, 2L);
+        personalService.removePatient(1L, 2L, 999L, "RECEPTIONIST");
 
         assertThat(doctor.getPatients()).doesNotContain(patient);
         verify(personalRepository).save(doctor);
@@ -297,7 +315,7 @@ class PersonalServiceImplTest {
         when(personalRepository.findById(1L)).thenReturn(Optional.of(activeDoctor()));
         when(patientRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> personalService.removePatient(1L, 99L))
+        assertThatThrownBy(() -> personalService.removePatient(1L, 99L, 999L, "RECEPTIONIST"))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -306,7 +324,7 @@ class PersonalServiceImplTest {
     @Test
     void getPatientsOfDoctor_returnsPatientList() {
         Patient patient = Patient.builder().id(2L).name("Jane").build();
-        Personal doctor = Personal.builder().id(1L).role(ERole.DOCTOR)
+        Personal doctor = Personal.builder().id(1L).role(doctorRole())
                 .patients(new ArrayList<>(List.of(patient))).build();
         PatientResponse response = new PatientResponse();
 

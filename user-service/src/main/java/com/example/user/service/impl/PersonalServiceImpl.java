@@ -5,6 +5,7 @@ import com.example.user.dto.PersonalRequest;
 import com.example.user.dto.PersonalResponse;
 import com.example.user.entity.Patient;
 import com.example.user.entity.Personal;
+import com.example.user.entity.Role;
 import com.example.user.entity.Specialty;
 import com.example.user.enums.ERole;
 import com.example.user.exception.BusinessException;
@@ -13,6 +14,7 @@ import com.example.user.mapper.PatientMapper;
 import com.example.user.mapper.PersonalMapper;
 import com.example.user.repository.PatientRepository;
 import com.example.user.repository.PersonalRepository;
+import com.example.user.repository.RoleRepository;
 import com.example.user.repository.SpecialtyRepository;
 import com.example.user.service.PersonalService;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,7 @@ public class PersonalServiceImpl implements PersonalService {
     private final PersonalRepository personalRepository;
     private final PatientRepository patientRepository;
     private final SpecialtyRepository specialtyRepository;
+    private final RoleRepository roleRepository;
     private final PersonalMapper personalMapper;
     private final PatientMapper patientMapper;
 
@@ -48,15 +51,14 @@ public class PersonalServiceImpl implements PersonalService {
     public PersonalResponse update(Long id, PersonalRequest request) {
         Personal personal = getOrThrow(id);
         personalMapper.toEntityUpdated(request, personal);
-        if (request.getRole() != null) {
-            personal.setRole(request.getRole());
+        if (request.getRoleId() != null) {
+            personal.setRole(getRoleOrThrow(request.getRoleId()));
         }
-        if (personal.getRole() == ERole.RECEPTIONIST) {
-            personal.setSpecialty(null);
-        } else if (request.getSpecialtyId() != null) {
-            Specialty specialty = specialtyRepository.findById(request.getSpecialtyId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Specialty not found: " + request.getSpecialtyId()));
-            personal.setSpecialty(specialty);
+        if (request.getSpecialtyId() != null) {
+            if(personal.getRole().getName().equals(ERole.DOCTOR.name()))
+                personal.setSpecialty(getSpecialtyOrThrow(request.getSpecialtyId()));
+            else
+                throw new BusinessException(String.format("this %s does not have a specialty assigned", personal.getRole().getName()));
         }
         return personalMapper.toResponse(personalRepository.save(personal));
     }
@@ -69,13 +71,12 @@ public class PersonalServiceImpl implements PersonalService {
     }
 
     @Transactional
-    public void assignPatient(Long doctorId, Long patientId) {
+    public void assignPatient(Long doctorId, Long patientId, Long userId, String role) {
         Personal doctor = getOrThrow(doctorId);
-        if (doctor.getRole() != ERole.DOCTOR) {
-            throw new BusinessException("Only doctors can have patients assigned");
-        }
-        Patient patient = patientRepository.findById(patientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Patient not found with id: " + patientId));
+        if (role.equals(ERole.DOCTOR.name()))
+            if (!doctorId.equals(userId))
+                throw new BusinessException("this user cannot assign this patient");
+        Patient patient = getPatientOrThrow(patientId);
         if (!doctor.getPatients().contains(patient)) {
             doctor.getPatients().add(patient);
             personalRepository.save(doctor);
@@ -83,12 +84,16 @@ public class PersonalServiceImpl implements PersonalService {
     }
 
     @Transactional
-    public void removePatient(Long doctorId, Long patientId) {
+    public void removePatient(Long doctorId, Long patientId, Long userId, String role) {
         Personal doctor = getOrThrow(doctorId);
-        Patient patient = patientRepository.findById(patientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Patient not found with id: " + patientId));
-        doctor.getPatients().remove(patient);
-        personalRepository.save(doctor);
+        if (role.equals(ERole.DOCTOR.name()))
+            if (!doctorId.equals(userId))
+                throw new BusinessException("this user cannot assign this patient");
+        Patient patient = getPatientOrThrow(patientId);
+        if (doctor.getPatients().contains(patient)) {
+            doctor.getPatients().remove(patient);
+            personalRepository.save(doctor);
+        }
     }
 
     public List<PatientResponse> getPatientsOfDoctor(Long doctorId) {
@@ -99,5 +104,20 @@ public class PersonalServiceImpl implements PersonalService {
     private Personal getOrThrow(Long id) {
         return personalRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Personal not found with id: " + id));
+    }
+
+    private Specialty getSpecialtyOrThrow(Long id) {
+        return specialtyRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Specialty not found with id: " + id));
+    }
+
+    private Role getRoleOrThrow(Long id) {
+        return roleRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + id));
+    }
+
+    private Patient getPatientOrThrow(Long id) {
+        return patientRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Patient not found with id: " + id));
     }
 }

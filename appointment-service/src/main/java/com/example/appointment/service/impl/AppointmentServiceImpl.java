@@ -1,22 +1,19 @@
 package com.example.appointment.service.impl;
 
 import com.example.appointment.client.ScheduleClient;
-import com.example.appointment.config.RabbitConfig;
 import com.example.appointment.dto.AppointmentRequest;
 import com.example.appointment.dto.AppointmentResponse;
 import com.example.appointment.dto.ScheduleResponse;
 import com.example.appointment.entity.Appointment;
 import com.example.appointment.enums.AppointmentStatus;
+import com.example.appointment.enums.ERole;
 import com.example.appointment.enums.ScheduleStatus;
-import com.example.appointment.event.AppointmentBookedEvent;
 import com.example.appointment.exception.BusinessException;
 import com.example.appointment.exception.ResourceNotFoundException;
 import com.example.appointment.mapper.AppointmentMapper;
 import com.example.appointment.repository.AppointmentRepository;
 import com.example.appointment.service.AppointmentService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -24,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -32,10 +28,12 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentMapper appointmentMapper;
     private final ScheduleClient scheduleClient;
-    private final RabbitTemplate rabbitTemplate;
 
+    @Override
     @Transactional
-    public AppointmentResponse book(AppointmentRequest request) {
+    public AppointmentResponse book(AppointmentRequest request, Long userId, String role) {
+        if (role.equals(ERole.PATIENT.name()) && !request.getClientId().equals(userId))
+            throw new BusinessException("A patient can only book appointments for themselves");
         ScheduleResponse schedule = scheduleClient.findById(request.getScheduleId());
         if (!ScheduleStatus.AVAILABLE.name().equals(schedule.getStatus()))
             throw new BusinessException("This schedule slot is no longer available");
@@ -43,47 +41,61 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BusinessException("Cannot book a past schedule slot");
         scheduleClient.bookSchedule(request.getScheduleId());
         Appointment appointment = buildAppointment(schedule, request);
-        Appointment saved = appointmentRepository.save(appointment);
-        return appointmentMapper.toResponse(saved);
+        if (role.equals(ERole.PATIENT.name())) {
+            appointment.setStatus(AppointmentStatus.CONFIRMED);
+        }
+        return appointmentMapper.toResponse(appointmentRepository.save(appointment));
     }
 
+    @Override
     public AppointmentResponse findById(Long id) {
         return appointmentMapper.toResponse(getOrThrow(id));
     }
 
-    public Page<AppointmentResponse> findByClientId(Long clientId, Pageable pageable) {
+    @Override
+    public Page<AppointmentResponse> findByClientId(Long clientId, Pageable pageable, Long userId, String role) {
+        if (role.equals(ERole.PATIENT.name()))
+            if(!clientId.equals(userId))
+                throw new BusinessException("Not authorized to get those appointments");
         return appointmentRepository.findByClientId(clientId, pageable).map(appointmentMapper::toResponse);
     }
 
-    public Page<AppointmentResponse> findByDoctorAndStatus(Long personalId, AppointmentStatus status, Pageable pageable) {
-        return appointmentRepository.findAllByFilters(personalId, status, pageable).map(appointmentMapper::toResponse);
+    @Override
+    public Page<AppointmentResponse> findByDoctorAndStatus(Long doctorId, AppointmentStatus status, Pageable pageable, Long userId, String role) {
+        if (role.equals(ERole.PATIENT.name()))
+            if(!doctorId.equals(userId))
+                throw new BusinessException("Not authorized to get those appointments");
+        return appointmentRepository.findAllByFilters(doctorId, status, pageable).map(appointmentMapper::toResponse);
     }
 
+    @Override
     @Transactional
-    public AppointmentResponse confirm(Long id, Long doctorId) {
+    public AppointmentResponse confirm(Long id, Long userId, String role) {
         Appointment appointment = getOrThrow(id);
-        if (!appointment.getDoctorId().equals(doctorId))
-            throw new BusinessException("Not authorized to confirm this appointment");
+        if (role.equals(ERole.DOCTOR.name()))
+            if(!appointment.getDoctorId().equals(userId))
+                throw new BusinessException("Not authorized to confirm this appointment");
         if (appointment.getStatus() != AppointmentStatus.PENDING)
             throw new BusinessException("Only pending appointments can be confirmed");
         appointment.setStatus(AppointmentStatus.CONFIRMED);
         Appointment saved = appointmentRepository.save(appointment);
-        return appointmentMapper.toResponse(appointmentRepository.save(saved));
+        return appointmentMapper.toResponse(saved);
     }
 
+    @Override
     @Transactional
-    public AppointmentResponse cancel(Long id, Long actorId) {
+    public AppointmentResponse cancel(Long id) {
         Appointment appointment = getOrThrow(id);
         if (appointment.getStatus() == AppointmentStatus.CANCELLED)
             throw new BusinessException("Appointment is already cancelled");
         appointment.setStatus(AppointmentStatus.CANCELLED);
         scheduleClient.releaseSchedule(appointment.getScheduleId());
-        Appointment saved = appointmentRepository.save(appointment);
-        return appointmentMapper.toResponse(saved);
+        return appointmentMapper.toResponse(appointmentRepository.save(appointment));
     }
 
+    @Override
     @Transactional
-    public AppointmentResponse reschedule(Long id, Long newScheduleId, Long actorId) {
+    public AppointmentResponse reschedule(Long id, Long newScheduleId) {
         Appointment appointment = getOrThrow(id);
         if (appointment.getStatus() == AppointmentStatus.CANCELLED)
             throw new BusinessException("Cannot reschedule a cancelled appointment");
@@ -97,17 +109,8 @@ public class AppointmentServiceImpl implements AppointmentService {
         appointment.setScheduleId(newSchedule.getId());
         appointment.setScheduleStart(newSchedule.getStartTime());
         appointment.setScheduleEnd(newSchedule.getEndTime());
-        appointment.setStatus(AppointmentStatus.PENDING);
-        Appointment saved = appointmentRepository.save(appointment);
-        return appointmentMapper.toResponse(saved);
-    }
-
-    private void publishEvent(Appointment a, String eventType, String actorType) {
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, RabbitConfig.BOOKING_ROUTING_KEY,
-                new AppointmentBookedEvent(a.getId(), eventType, actorType,
-                        a.getClientEmail(), a.getClientName(),
-                        a.getDoctorEmail(), a.getDoctorName(), a.getDoctorSpecialty(),
-                        a.getScheduleStart(), a.getScheduleEnd(), a.getStatus().name()));
+        appointment.setStatus(AppointmentStatus.CONFIRMED);
+        return appointmentMapper.toResponse(appointmentRepository.save(appointment));
     }
 
     private Appointment getOrThrow(Long id) {

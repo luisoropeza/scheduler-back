@@ -101,7 +101,7 @@ class PatientServiceImplTest {
         when(patientRepository.save(patient)).thenReturn(patient);
         when(patientMapper.toResponse(patient)).thenReturn(response);
 
-        patientService.update(1L, request);
+        patientService.update(1L, request, 1L);
 
         verify(patientMapper).toEntityUpdated(request, patient);
         verify(patientRepository).save(patient);
@@ -111,7 +111,7 @@ class PatientServiceImplTest {
     void update_notFound_throwsResourceNotFoundException() {
         when(patientRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> patientService.update(99L, new PatientRequest()))
+        assertThatThrownBy(() -> patientService.update(99L, new PatientRequest(), 99L))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 

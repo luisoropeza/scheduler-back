@@ -4,6 +4,7 @@ import com.example.user.dto.PatientRequest;
 import com.example.user.dto.PatientResponse;
 import com.example.user.dto.PersonalResponse;
 import com.example.user.entity.Patient;
+import com.example.user.exception.BusinessException;
 import com.example.user.exception.ResourceNotFoundException;
 import com.example.user.mapper.PatientMapper;
 import com.example.user.mapper.PersonalMapper;
@@ -26,8 +27,7 @@ public class PatientServiceImpl implements PatientService {
     private final PersonalMapper personalMapper;
 
     public Page<PatientResponse> findAll(Pageable pageable) {
-        Page<Patient> patients = patientRepository.findAll(pageable);
-        return patients.map(patientMapper::toResponse);
+        return patientRepository.findAll(pageable).map(patientMapper::toResponse);
     }
 
     public PatientResponse findById(Long id) {
@@ -35,7 +35,9 @@ public class PatientServiceImpl implements PatientService {
     }
 
     @Transactional
-    public PatientResponse update(Long id, PatientRequest request) {
+    public PatientResponse update(Long id, PatientRequest request, Long userId) {
+        if (!id.equals(userId))
+            throw new BusinessException("This user does not authorize to update this user");
         Patient patient = getOrThrow(id);
         patientMapper.toEntityUpdated(request, patient);
         return patientMapper.toResponse(patientRepository.save(patient));

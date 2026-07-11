@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -35,14 +34,13 @@ class AppointmentServiceImplTest {
     @Mock private AppointmentRepository appointmentRepository;
     @Mock private AppointmentMapper appointmentMapper;
     @Mock private ScheduleClient scheduleClient;
-    @Mock private RabbitTemplate rabbitTemplate;
 
     private AppointmentServiceImpl appointmentService;
 
     @BeforeEach
     void setUp() {
         appointmentService = new AppointmentServiceImpl(
-                appointmentRepository, appointmentMapper, scheduleClient, rabbitTemplate
+                appointmentRepository, appointmentMapper, scheduleClient
         );
     }
 
@@ -96,7 +94,7 @@ class AppointmentServiceImplTest {
         when(appointmentRepository.save(any(Appointment.class))).thenReturn(saved);
         when(appointmentMapper.toResponse(saved)).thenReturn(new AppointmentResponse());
 
-        appointmentService.book(bookingRequest());
+        appointmentService.book(bookingRequest(), 999L, "RECEPTIONIST");
 
         verify(scheduleClient).bookSchedule(10L);
         verify(appointmentRepository).save(any(Appointment.class));
@@ -111,7 +109,7 @@ class AppointmentServiceImplTest {
         when(appointmentRepository.save(any(Appointment.class))).thenReturn(saved);
         when(appointmentMapper.toResponse(saved)).thenReturn(new AppointmentResponse());
 
-        appointmentService.book(bookingRequest());
+        appointmentService.book(bookingRequest(), 999L, "RECEPTIONIST");
 
         verify(appointmentRepository).save(argThat(a ->
                 a.getDoctorId().equals(1L) &&
@@ -128,12 +126,12 @@ class AppointmentServiceImplTest {
 
         when(scheduleClient.findById(10L)).thenReturn(schedule);
 
-        assertThatThrownBy(() -> appointmentService.book(bookingRequest()))
+        assertThatThrownBy(() -> appointmentService.book(bookingRequest(), 999L, "RECEPTIONIST"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("no longer available");
 
         verify(scheduleClient, never()).bookSchedule(anyLong());
-        verifyNoInteractions(appointmentRepository, rabbitTemplate);
+        verifyNoInteractions(appointmentRepository);
     }
 
     @Test
@@ -143,7 +141,7 @@ class AppointmentServiceImplTest {
 
         when(scheduleClient.findById(10L)).thenReturn(schedule);
 
-        assertThatThrownBy(() -> appointmentService.book(bookingRequest()))
+        assertThatThrownBy(() -> appointmentService.book(bookingRequest(), 999L, "RECEPTIONIST"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("past");
     }
@@ -184,7 +182,7 @@ class AppointmentServiceImplTest {
                 .thenReturn(new PageImpl<>(List.of(a)));
         when(appointmentMapper.toResponse(a)).thenReturn(response);
 
-        Page<AppointmentResponse> result = appointmentService.findByClientId(5L, Pageable.unpaged());
+        Page<AppointmentResponse> result = appointmentService.findByClientId(5L, Pageable.unpaged(), 999L, "RECEPTIONIST");
 
         assertThat(result.getContent()).hasSize(1);
     }
@@ -196,7 +194,7 @@ class AppointmentServiceImplTest {
         when(appointmentRepository.findAllByFilters(eq(1L), eq(AppointmentStatus.PENDING), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        Page<AppointmentResponse> result = appointmentService.findByDoctorAndStatus(1L, AppointmentStatus.PENDING, Pageable.unpaged());
+        Page<AppointmentResponse> result = appointmentService.findByDoctorAndStatus(1L, AppointmentStatus.PENDING, Pageable.unpaged(), 999L, "RECEPTIONIST");
 
         assertThat(result.getContent()).isEmpty();
         verify(appointmentRepository).findAllByFilters(eq(1L), eq(AppointmentStatus.PENDING), any(Pageable.class));
@@ -207,7 +205,7 @@ class AppointmentServiceImplTest {
         when(appointmentRepository.findAllByFilters(eq(1L), isNull(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        Page<AppointmentResponse> result = appointmentService.findByDoctorAndStatus(1L, null, Pageable.unpaged());
+        Page<AppointmentResponse> result = appointmentService.findByDoctorAndStatus(1L, null, Pageable.unpaged(), 999L, "RECEPTIONIST");
 
         assertThat(result.getContent()).isEmpty();
         verify(appointmentRepository).findAllByFilters(eq(1L), isNull(), any(Pageable.class));
@@ -224,7 +222,7 @@ class AppointmentServiceImplTest {
         when(appointmentRepository.save(appointment)).thenReturn(saved);
         when(appointmentMapper.toResponse(any())).thenReturn(new AppointmentResponse());
 
-        appointmentService.confirm(1L, 1L);
+        appointmentService.confirm(1L, 1L, "DOCTOR");
 
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CONFIRMED);
         verify(appointmentRepository, atLeastOnce()).save(any(Appointment.class));
@@ -235,7 +233,7 @@ class AppointmentServiceImplTest {
         Appointment appointment = Appointment.builder().id(1L).doctorId(1L).status(AppointmentStatus.CONFIRMED).build();
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appointment));
 
-        assertThatThrownBy(() -> appointmentService.confirm(1L, 1L))
+        assertThatThrownBy(() -> appointmentService.confirm(1L, 1L, "DOCTOR"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Only pending appointments can be confirmed");
     }
@@ -252,7 +250,7 @@ class AppointmentServiceImplTest {
         when(appointmentRepository.save(appointment)).thenReturn(saved);
         when(appointmentMapper.toResponse(saved)).thenReturn(new AppointmentResponse());
 
-        appointmentService.cancel(1L, 1L);
+        appointmentService.cancel(1L);
 
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CANCELLED);
         verify(scheduleClient).releaseSchedule(10L);
@@ -263,7 +261,7 @@ class AppointmentServiceImplTest {
         Appointment appointment = Appointment.builder().id(1L).doctorId(1L).clientId(5L).status(AppointmentStatus.CANCELLED).build();
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appointment));
 
-        assertThatThrownBy(() -> appointmentService.cancel(1L, 1L))
+        assertThatThrownBy(() -> appointmentService.cancel(1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("already cancelled");
 

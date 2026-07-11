@@ -3,6 +3,7 @@ package com.example.appointment.controller;
 import com.example.appointment.dto.AppointmentRequest;
 import com.example.appointment.dto.AppointmentResponse;
 import com.example.appointment.enums.AppointmentStatus;
+import com.example.appointment.security.SecurityUtils;
 import com.example.appointment.service.AppointmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -15,10 +16,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/appointments")
@@ -29,8 +29,8 @@ public class AppointmentController {
 
     @PostMapping
     @Operation(summary = "POST /api/appointments — book an appointment for a patient on a given schedule slot")
-    public ResponseEntity<AppointmentResponse> book(@Valid @RequestBody AppointmentRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(appointmentService.book(request));
+    public ResponseEntity<AppointmentResponse> book(@Valid @RequestBody AppointmentRequest request, Authentication auth) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(appointmentService.book(request, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
 
     @GetMapping("/{id}")
@@ -43,42 +43,47 @@ public class AppointmentController {
     @Operation(summary = "GET /api/appointments/client/{clientId} — list all appointments for a patient")
     public ResponseEntity<Page<AppointmentResponse>> findByClient(
             @PathVariable Long clientId,
-            @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+            @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            Authentication auth
     ) {
-        return ResponseEntity.ok(appointmentService.findByClientId(clientId, pageable));
+        return ResponseEntity.ok(appointmentService.findByClientId(clientId, pageable, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
 
-    @GetMapping("/personal/{personalId}")
-    @Operation(summary = "GET /api/appointments/personal/{personalId} — list appointments for a personal, filter by ?status=PENDING|CONFIRMED|CANCELLED")
+    @GetMapping("/personal/{doctorId}")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPTIONIST')")
+    @Operation(summary = "GET /api/appointments/personal/{doctorId} — list all appointments for a personal, filter by ?status={status}")
     public ResponseEntity<Page<AppointmentResponse>> findByPersonal(
-            @PathVariable Long personalId,
+            @PathVariable Long doctorId,
             @RequestParam(required = false) AppointmentStatus status,
-            @PageableDefault(sort = "scheduleStart", direction = Sort.Direction.ASC) Pageable pageable
+            @PageableDefault(sort = "scheduleStart", direction = Sort.Direction.ASC) Pageable pageable,
+            Authentication auth
     ) {
-        return ResponseEntity.ok(appointmentService.findByDoctorAndStatus(personalId, status, pageable));
+        return ResponseEntity.ok(appointmentService.findByDoctorAndStatus(doctorId, status, pageable, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
 
     @PatchMapping("/{id}/confirm")
-    @Operation(summary = "PATCH /api/appointments/{id}/confirm — confirm a pending appointment (doctor only)")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPTIONIST')")
+    @Operation(summary = "PATCH /api/appointments/{id}/confirm — confirm a pending appointment")
     public ResponseEntity<AppointmentResponse> confirm(@PathVariable Long id, Authentication auth) {
-        return ResponseEntity.ok(appointmentService.confirm(id, Long.parseLong(auth.getName())));
+        return ResponseEntity.ok(appointmentService.confirm(id, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
 
     @PatchMapping("/{id}/cancel")
-    @Operation(summary = "PATCH /api/appointments/{id}/cancel — cancel an appointment (doctor or patient)")
-    public ResponseEntity<AppointmentResponse> cancel(@PathVariable Long id, Authentication auth) {
-        return ResponseEntity.ok(appointmentService.cancel(id, Long.parseLong(auth.getName())));
+    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPTIONIST')")
+    @Operation(summary = "PATCH /api/appointments/{id}/cancel — cancel an appointment, releases the slot back to AVAILABLE")
+    public ResponseEntity<AppointmentResponse> cancel(@PathVariable Long id) {
+        return ResponseEntity.ok(appointmentService.cancel(id));
     }
 
     @Data
     public static class RescheduleRequest { private Long scheduleId; }
 
     @PatchMapping("/{id}/reschedule")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPTIONIST')")
     @Operation(summary = "PATCH /api/appointments/{id}/reschedule — move an appointment to a new schedule slot (body: {scheduleId})")
     public ResponseEntity<AppointmentResponse> reschedule(
             @PathVariable Long id,
-            @RequestBody RescheduleRequest body,
-            Authentication auth) {
-        return ResponseEntity.ok(appointmentService.reschedule(id, body.getScheduleId(), Long.parseLong(auth.getName())));
+            @RequestBody RescheduleRequest body) {
+        return ResponseEntity.ok(appointmentService.reschedule(id, body.getScheduleId()));
     }
 }

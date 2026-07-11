@@ -7,11 +7,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface AppointmentService {
-    AppointmentResponse book(AppointmentRequest request);
+    AppointmentResponse book(AppointmentRequest request, Long userId, String role);
     AppointmentResponse findById(Long id);
-    Page<AppointmentResponse> findByClientId(Long clientId, Pageable pageable);
-    Page<AppointmentResponse> findByDoctorAndStatus(Long doctorId, AppointmentStatus status, Pageable pageable);
-    AppointmentResponse confirm(Long id, Long doctorId);
-    AppointmentResponse cancel(Long id, Long actorId);
-    AppointmentResponse reschedule(Long id, Long newScheduleId, Long actorId);
+    Page<AppointmentResponse> findByClientId(Long clientId, Pageable pageable, Long userId, String role);
+    Page<AppointmentResponse> findByDoctorAndStatus(Long doctorId, AppointmentStatus status, Pageable pageable, Long userId, String role);
+    AppointmentResponse confirm(Long id, Long userId, String role);
+    AppointmentResponse cancel(Long id);
+    AppointmentResponse reschedule(Long id, Long newScheduleId);
 }

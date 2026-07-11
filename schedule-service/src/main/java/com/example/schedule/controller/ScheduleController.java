@@ -14,6 +14,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -26,7 +27,7 @@ public class ScheduleController {
     private final ScheduleService scheduleService;
 
     @GetMapping("/api/schedules")
-    @Operation(summary = "GET /api/schedules — browse slots, filter by ?doctorId=<id>, ?specialty=<value>, ?status=<AVAILABLE|BOOKED>, ?after=<dateTime>")
+    @Operation(summary = "GET /api/schedules — browse slots, filter by ?doctorId={doctorId}?specialty={specialty}?status={status}?after={after}")
     public ResponseEntity<Page<ScheduleResponse>> findAvailable(
             @RequestParam(required = false) Long doctorId,
             @RequestParam(required = false) String specialty,
@@ -37,7 +38,14 @@ public class ScheduleController {
         return ResponseEntity.ok(scheduleService.findAll(doctorId, specialty, status, after, pageable));
     }
 
+    @GetMapping("/api/schedules/{id}")
+    @Operation(summary = "GET /api/schedules/{id} — get a schedule slot by ID")
+    public ResponseEntity<ScheduleResponse> findById(@PathVariable Long id) {
+        return ResponseEntity.ok(scheduleService.getById(id));
+    }
+
     @PostMapping("/api/personal/{doctorId}/schedules")
+    @PreAuthorize("hasRole('DOCTOR')")
     @Operation(summary = "POST /api/personal/{doctorId}/schedules — add a single available time slot for a doctor")
     public ResponseEntity<ScheduleResponse> create(
             @PathVariable Long doctorId,
@@ -47,6 +55,7 @@ public class ScheduleController {
     }
 
     @PostMapping("/api/personal/{doctorId}/schedules/batch")
+    @PreAuthorize("hasRole('DOCTOR')")
     @Operation(summary = "POST /api/personal/{doctorId}/schedules/batch — add multiple available time slots for a doctor")
     public ResponseEntity<List<ScheduleResponse>> createBatch(
             @PathVariable Long doctorId,
@@ -56,6 +65,7 @@ public class ScheduleController {
     }
 
     @DeleteMapping("/api/personal/{doctorId}/schedules/{scheduleId}")
+    @PreAuthorize("hasRole('DOCTOR')")
     @Operation(summary = "DELETE /api/personal/{doctorId}/schedules/{scheduleId} — remove an available slot")
     public ResponseEntity<Void> delete(
             @PathVariable Long doctorId,

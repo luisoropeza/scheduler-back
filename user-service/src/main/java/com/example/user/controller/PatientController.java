@@ -12,6 +12,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -22,7 +24,8 @@ public class PatientController {
     private final PatientService patientService;
 
     @GetMapping
-    @Operation(summary = "GET /api/patients — list all active patients")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPTIONIST')")
+    @Operation(summary = "GET /api/patients — list all patients")
     public ResponseEntity<Page<PatientResponse>> findAll(
             @PageableDefault(sort = "id", direction = Sort.Direction.ASC) Pageable pageable
     ) {
@@ -30,6 +33,7 @@ public class PatientController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPTIONIST')")
     @Operation(summary = "GET /api/patients/{id} — get a patient by ID")
     public ResponseEntity<PatientResponse> findById(@PathVariable Long id) {
         return ResponseEntity.ok(patientService.findById(id));
@@ -37,8 +41,8 @@ public class PatientController {
 
     @PutMapping("/{id}")
     @Operation(summary = "PUT /api/patients/{id} — update patient information")
-    public ResponseEntity<PatientResponse> update(@PathVariable Long id, @Valid @RequestBody PatientRequest request) {
-        return ResponseEntity.ok(patientService.update(id, request));
+    public ResponseEntity<PatientResponse> update(@PathVariable Long id, @Valid @RequestBody PatientRequest request, Authentication auth) {
+        return ResponseEntity.ok(patientService.update(id, request, Long.parseLong(auth.getName())));
     }
 
     @DeleteMapping("/{id}")

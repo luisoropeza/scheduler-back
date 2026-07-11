@@ -2,10 +2,11 @@ package com.example.user.config;
 
 import com.example.user.entity.Patient;
 import com.example.user.entity.Personal;
+import com.example.user.entity.Role;
 import com.example.user.entity.Specialty;
-import com.example.user.enums.ERole;
 import com.example.user.repository.PatientRepository;
 import com.example.user.repository.PersonalRepository;
+import com.example.user.repository.RoleRepository;
 import com.example.user.repository.SpecialtyRepository;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class DataSeeder implements ApplicationRunner {
     private final SpecialtyRepository specialtyRepository;
+    private final RoleRepository roleRepository;
     private final PersonalRepository personalRepository;
     private final PatientRepository patientRepository;
     private final BCryptPasswordEncoder passwordEncoder;
@@ -31,15 +33,21 @@ public class DataSeeder implements ApplicationRunner {
             specialtyRepository.save(Specialty.builder().name("Dentistry").build());
             specialtyRepository.save(Specialty.builder().name("Pediatrics").build());
         }
+        if (roleRepository.count() == 0) {
+            roleRepository.save(Role.builder().name("DOCTOR").build());
+            roleRepository.save(Role.builder().name("RECEPTIONIST").build());
+        }
         if (personalRepository.count() == 0) {
             String pwd = passwordEncoder.encode("password123");
             Specialty gm = specialtyRepository.findByNameIgnoreCase("General Medicine").orElseThrow();
             Specialty dent = specialtyRepository.findByNameIgnoreCase("Dentistry").orElseThrow();
             Specialty peds = specialtyRepository.findByNameIgnoreCase("Pediatrics").orElseThrow();
-            personalRepository.save(Personal.builder().name("Dr. Ana García").email("ana.garcia@clinic.com").password(pwd).role(ERole.DOCTOR).specialty(gm).build());
-            personalRepository.save(Personal.builder().name("Dr. Carlos Méndez").email("carlos.mendez@clinic.com").password(pwd).role(ERole.DOCTOR).specialty(dent).build());
-            personalRepository.save(Personal.builder().name("Dr. Laura Torres").email("laura.torres@clinic.com").password(pwd).role(ERole.DOCTOR).specialty(peds).build());
-            personalRepository.save(Personal.builder().name("Maria Ramos").email("maria.ramos@clinic.com").password(pwd).role(ERole.RECEPTIONIST).build());
+            Role doctor = roleRepository.findByNameIgnoreCase("DOCTOR").orElseThrow();
+            Role receptionist = roleRepository.findByNameIgnoreCase("RECEPTIONIST").orElseThrow();
+            personalRepository.save(Personal.builder().name("Dr. Ana García").email("ana.garcia@clinic.com").password(pwd).role(doctor).specialty(gm).build());
+            personalRepository.save(Personal.builder().name("Dr. Carlos Méndez").email("carlos.mendez@clinic.com").password(pwd).role(doctor).specialty(dent).build());
+            personalRepository.save(Personal.builder().name("Dr. Laura Torres").email("laura.torres@clinic.com").password(pwd).role(doctor).specialty(peds).build());
+            personalRepository.save(Personal.builder().name("Maria Ramos").email("maria.ramos@clinic.com").password(pwd).role(receptionist).build());
         }
         if (patientRepository.count() == 0) {
             String pwd = passwordEncoder.encode("password123");

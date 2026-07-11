@@ -11,6 +11,7 @@ A healthcare appointment scheduling platform built as a microservices system. Me
                   │  /api/personal/**                  → user-service                   │
                   │  /api/patients/**                  → user-service                   │
                   │  /api/specialties/**               → user-service                   │
+                  │  /api/roles                        → user-service                   │
                   │  /api/schedules                    → schedule-service               │
                   │  /api/personal/{id}/schedules/**   → schedule-service               │
                   │  /api/appointments/**              → appointment-service            │
@@ -22,12 +23,6 @@ A healthcare appointment scheduling platform built as a microservices system. Me
                          │                      │                    │
                       user_db             schedule_db         appointment_db
                     (pg :5432)            (pg :5433)           (pg :5434)
-                                                                     │
-                                                                 RabbitMQ :5672
-                                                                     │
-                                                           notification-service
-                                                                  :8084
-                                                                (SMTP email)
 ```
 
 ### Services
@@ -36,13 +31,14 @@ A healthcare appointment scheduling platform built as a microservices system. Me
 |---|---|---|
 | **user-service** | 8081 | Staff and patient management, doctor-patient M:N relationships, specialty lookup, JWT auth for both staff and patients |
 | **schedule-service** | 8082 | Time slot management; browse with filters + doctor-owned slot CRUD; internal book/release API |
-| **appointment-service** | 8083 | Booking, confirmation, cancellation, and rescheduling; publishes RabbitMQ events |
-| **notification-service** | 8084 | Consumes appointment events, sends HTML emails to the correct party |
+| **appointment-service** | 8083 | Booking, confirmation, cancellation, and rescheduling |
 | **gateway-service** | 8080 | Spring Cloud Gateway — path-based routing, single public entry point |
 
-Each service owns its own PostgreSQL database. Cross-service data is denormalized at write time (no cross-service JPA relationships). Appointment events are delivered to notification-service via RabbitMQ, so email failures never roll back a booking.
+Each service owns its own PostgreSQL database. Cross-service data is denormalized at write time (no cross-service JPA relationships).
 
 > **Note:** `appointment-service` also calls `schedule-service` directly via an internal API (`/internal/schedules/**`) that is not routed through the gateway. Each service contains its own copy of `JwtAuthFilter`, `JwtUtil`, `GlobalExceptionHandler`, and shared exception classes — there is no shared `common` library.
+>
+> A `notification-service` (email notifications on appointment events via RabbitMQ) previously existed and has been removed pending a better implementation.
 
 ## Tech Stack
 
@@ -51,13 +47,11 @@ Each service owns its own PostgreSQL database. Cross-service data is denormalize
 | Language | Java 26 |
 | Framework | Spring Boot 4.0.6 |
 | Persistence | Spring Data JPA + PostgreSQL (database-per-service) |
-| Messaging | Spring AMQP + RabbitMQ |
 | HTTP clients | Spring RestClient (synchronous inter-service calls) |
 | Mapping | MapStruct 1.6.3 |
 | Boilerplate | Lombok |
 | Validation | Spring Validation (Jakarta) |
 | Security | Spring Security + JWT (jjwt), BCrypt passwords |
-| Email | Spring Mail (SMTP) |
 | API Docs | SpringDoc OpenAPI (Swagger UI per service, Bearer auth wired) |
 | Gateway | Spring Cloud Gateway 5.x (`spring-cloud-starter-gateway-server-webflux`) |
 | Build | Gradle multi-module (wrapper included) |
@@ -71,14 +65,11 @@ cd scheduler-back
 
 # Set required secrets
 export JWT_SECRET=your-secret-key-min-32-chars
-export MAIL_USERNAME=your-email@gmail.com
-export MAIL_PASSWORD=your-app-password
-export MAIL_FROM=your-email@gmail.com
 
 docker compose up --build
 ```
 
-All services, databases, RabbitMQ, and the gateway start together. The API is available at `http://localhost:8080`.
+All services, databases, and the gateway start together. The API is available at `http://localhost:8080`.
 
 On first startup each service seeds sample data: 3 specialties, 3 doctors + 1 receptionist, 3 patients with several schedule slots (some already booked), and two sample appointments.
 
@@ -91,13 +82,6 @@ On first startup each service seeds sample data: 3 specialties, 3 doctors + 1 re
 | `SCHEDULE_SERVICE_URL` | `http://schedule-service:8082` | appointment-service, gateway-service |
 | `APPOINTMENT_SERVICE_URL` | `http://appointment-service:8083` | gateway-service |
 | `PERSONAL_SERVICE_URL` | `http://user-service:8081` | schedule-service |
-| `RABBITMQ_HOST` | `rabbitmq` | appointment-service, notification-service |
-| `MAIL_HOST` | `smtp.gmail.com` | notification-service |
-| `MAIL_PORT` | `587` | notification-service |
-| `MAIL_USERNAME` | *(required)* | notification-service |
-| `MAIL_PASSWORD` | *(required)* | notification-service |
-| `MAIL_FROM` | *(required)* | notification-service |
-| `MAIL_FROM_NAME` | `Scheduler` | notification-service |
 | `CORS_ALLOWED_ORIGINS` | `*` | user, schedule, appointment services |
 
 ## Development Build
@@ -112,7 +96,7 @@ On first startup each service seeds sample data: 3 specialties, 3 doctors + 1 re
 # Build a single service
 ./gradlew :schedule-service:bootJar
 
-# Run a single service (requires external Postgres + RabbitMQ)
+# Run a single service (requires external Postgres)
 ./gradlew :user-service:bootRun
 
 # Run all tests
@@ -237,6 +221,7 @@ All endpoints are reached through the gateway at `http://localhost:8080`. All li
 | `PUT` | `/api/personal/{id}` | Update staff information. |
 | `DELETE` | `/api/personal/{id}` | Deactivate a staff member (soft delete). |
 | `GET` | `/api/specialties` | List all available specialties. |
+| `GET` | `/api/roles` | List all available staff roles. |
 
 **PersonalResponse**
 ```json
@@ -256,7 +241,7 @@ All endpoints are reached through the gateway at `http://localhost:8080`. All li
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/patients` | List all active patients (paginated). |
+| `GET` | `/api/patients` | List all patients (paginated). |
 | `GET` | `/api/patients/{id}` | Get a patient by ID. |
 | `PUT` | `/api/patients/{id}` | Update patient information. |
 | `DELETE` | `/api/patients/{id}` | Deactivate a patient (soft delete). |
@@ -334,7 +319,7 @@ All endpoints are reached through the gateway at `http://localhost:8080`. All li
 | `POST` | `/api/appointments` | Book an appointment on an available slot. |
 | `GET` | `/api/appointments/{id}` | Get appointment details by ID. |
 | `GET` | `/api/appointments/client/{clientId}` | List all appointments for a patient (paginated). |
-| `GET` | `/api/appointments/personal/{personalId}` | List appointments for a staff member. Filter by `?status=`. |
+| `GET` | `/api/appointments/personal/{doctorId}` | List appointments for a staff member. Filter by `?status=`. |
 | `PATCH` | `/api/appointments/{id}/confirm` | Confirm a `PENDING` appointment. |
 | `PATCH` | `/api/appointments/{id}/cancel` | Cancel an appointment, releases the slot back to `AVAILABLE`. |
 | `PATCH` | `/api/appointments/{id}/reschedule` | Move an appointment to a different available slot. |
@@ -393,22 +378,6 @@ PENDING ──► CONFIRMED
 
 ---
 
-## Email Notifications
-
-appointment-service publishes an `AppointmentBookedEvent` to RabbitMQ for each action; notification-service consumes it and sends an HTML email. The routing logic in notification-service determines the recipient:
-
-| Event | Actor | Email sent to |
-|---|---|---|
-| `BOOKED` | — | Patient |
-| `CANCELLED` | Doctor | Patient |
-| `CANCELLED` | Patient | Doctor |
-| `RESCHEDULED` | Doctor | Patient |
-| `RESCHEDULED` | Patient | Doctor |
-
-Email delivery is fully decoupled from the booking transaction — a mail failure has no effect on the appointment record.
-
----
-
 ## Error Responses
 
 All services return the same error structure:
@@ -443,21 +412,19 @@ scheduler-platform/
 ├── user-service/
 │   └── src/
 │       ├── main/java/com/example/user/
-│       │   ├── controller/   # PersonalController, PatientController, DoctorPatientController
-│       │   │                 # PersonalAuthController, PatientAuthController, SpecialtyController
-│       │   ├── service/      # PersonalService, PatientService + impls
-│       │   │                 # PersonalAuthService, PatientAuthService, SpecialtyService
-│       │   ├── repository/   # PersonalRepository, PatientRepository, SpecialtyRepository
-│       │   ├── entity/       # Personal, Patient, Specialty
-│       │   ├── enums/        # ERole (DOCTOR, RECEPTIONIST, PATIENT)
+│       │   ├── controller/   # AuthController (patient + staff register/login), PersonalController
+│       │   │                 # PatientController, DoctorPatientController, SpecialtyController, RoleController
+│       │   ├── service/      # AuthService, PersonalService, PatientService, RoleService + impls
+│       │   ├── repository/   # PersonalRepository, PatientRepository, SpecialtyRepository, RoleRepository
+│       │   ├── entity/       # Personal, Patient, Specialty, Role (DB-backed, seeded with DOCTOR/RECEPTIONIST)
+│       │   ├── enums/        # ERole (DOCTOR, RECEPTIONIST, PATIENT) — still used for the JWT role claim and comparisons
 │       │   ├── dto/          # Request/Response DTOs for all resources
-│       │   ├── mapper/       # PersonalMapper, PatientMapper, SpecialtyMapper (MapStruct)
+│       │   ├── mapper/       # PersonalMapper, PatientMapper, SpecialtyMapper, RoleMapper (MapStruct)
 │       │   └── config/       # SecurityConfig, DataSeeder
-│       └── test/java/com/example/user/service/
-│           ├── PersonalAuthServiceTest
-│           ├── PatientAuthServiceTest
-│           ├── impl/PersonalServiceImplTest
-│           └── impl/PatientServiceImplTest
+│       └── test/java/com/example/user/service/impl/
+│           ├── AuthServiceImplTest
+│           ├── PersonalServiceImplTest
+│           └── PatientServiceImplTest
 ├── schedule-service/
 │   └── src/
 │       ├── main/java/com/example/schedule/
@@ -472,23 +439,18 @@ scheduler-platform/
 │       │   └── config/       # SecurityConfig, DataSeeder
 │       └── test/java/com/example/schedule/service/impl/
 │           └── ScheduleServiceImplTest
-├── appointment-service/
-│   └── src/
-│       ├── main/java/com/example/appointment/
-│       │   ├── controller/   # AppointmentController
-│       │   ├── service/
-│       │   │   └── impl/     # AppointmentServiceImpl
-│       │   ├── repository/   # AppointmentRepository (single JPQL filter query with pagination)
-│       │   ├── entity/       # Appointment (stores a snapshot of schedule/doctor fields at booking time)
-│       │   ├── dto/
-│       │   ├── mapper/
-│       │   ├── client/       # ScheduleClient (RestClient → schedule-service internal API)
-│       │   └── config/       # SecurityConfig, RabbitConfig, DataSeeder
-│       └── test/java/com/example/appointment/service/impl/
-│           └── AppointmentServiceImplTest
-└── notification-service/
-    └── src/main/java/com/example/notification/
-        ├── listener/     # AppointmentEventListener (@RabbitListener)
-        ├── service/      # NotificationService + impl (builds and sends HTML email)
-        └── config/       # RabbitConfig
+└── appointment-service/
+    └── src/
+        ├── main/java/com/example/appointment/
+        │   ├── controller/   # AppointmentController
+        │   ├── service/
+        │   │   └── impl/     # AppointmentServiceImpl
+        │   ├── repository/   # AppointmentRepository (single JPQL filter query with pagination)
+        │   ├── entity/       # Appointment (stores a snapshot of schedule/doctor fields at booking time)
+        │   ├── dto/
+        │   ├── mapper/
+        │   ├── client/       # ScheduleClient (RestClient → schedule-service internal API)
+        │   └── config/       # SecurityConfig, DataSeeder
+        └── test/java/com/example/appointment/service/impl/
+            └── AppointmentServiceImplTest
 ```

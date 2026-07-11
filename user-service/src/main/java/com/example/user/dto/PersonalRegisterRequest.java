@@ -1,6 +1,5 @@
 package com.example.user.dto;
 
-import com.example.user.enums.ERole;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -18,6 +17,6 @@ public class PersonalRegisterRequest {
     @Size(min = 8)
     private String password;
     @NotNull
-    private ERole role;
+    private Long roleId;
     private Long specialtyId;
 }
