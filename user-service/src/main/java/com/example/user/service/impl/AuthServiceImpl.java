@@ -11,6 +11,7 @@ import com.example.user.entity.Specialty;
 import com.example.user.enums.ERole;
 import com.example.user.exception.BusinessException;
 import com.example.user.exception.ResourceNotFoundException;
+import com.example.user.exception.UnauthorizedException;
 import com.example.user.mapper.PatientMapper;
 import com.example.user.mapper.PersonalMapper;
 import com.example.user.repository.PatientRepository;
@@ -51,10 +52,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse loginPatient(LoginRequest request) {
         Patient patient = patientRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BusinessException("Invalid credentials"));
-        if (!patient.isActive()) throw new BusinessException("Account is inactive");
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
+        if (!patient.isActive()) throw new UnauthorizedException("Account is inactive");
         if (!passwordEncoder.matches(request.getPassword(), patient.getPassword())) {
-            throw new BusinessException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
         return new LoginResponse(jwtUtil.generate(patient.getId(), PATIENT_ROLE));
     }
@@ -79,10 +80,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse loginPersonal(LoginRequest request) {
         Personal personal = personalRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BusinessException("Invalid credentials"));
-        if (!personal.isActive()) throw new BusinessException("Account is inactive");
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
+        if (!personal.isActive()) throw new UnauthorizedException("Account is inactive");
         if (!passwordEncoder.matches(request.getPassword(), personal.getPassword())) {
-            throw new BusinessException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
         return new LoginResponse(jwtUtil.generate(personal.getId(), personal.getRole().getName()));
     }

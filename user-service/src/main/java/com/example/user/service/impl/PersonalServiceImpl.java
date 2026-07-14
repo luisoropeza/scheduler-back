@@ -9,6 +9,7 @@ import com.example.user.entity.Role;
 import com.example.user.entity.Specialty;
 import com.example.user.enums.ERole;
 import com.example.user.exception.BusinessException;
+import com.example.user.exception.ForbiddenException;
 import com.example.user.exception.ResourceNotFoundException;
 import com.example.user.mapper.PatientMapper;
 import com.example.user.mapper.PersonalMapper;
@@ -75,7 +76,7 @@ public class PersonalServiceImpl implements PersonalService {
         Personal doctor = getOrThrow(doctorId);
         if (role.equals(ERole.DOCTOR.name()))
             if (!doctorId.equals(userId))
-                throw new BusinessException("this user cannot assign this patient");
+                throw new ForbiddenException("this user cannot assign this patient");
         Patient patient = getPatientOrThrow(patientId);
         if (!doctor.getPatients().contains(patient)) {
             doctor.getPatients().add(patient);
@@ -88,7 +89,7 @@ public class PersonalServiceImpl implements PersonalService {
         Personal doctor = getOrThrow(doctorId);
         if (role.equals(ERole.DOCTOR.name()))
             if (!doctorId.equals(userId))
-                throw new BusinessException("this user cannot assign this patient");
+                throw new ForbiddenException("this user cannot assign this patient");
         Patient patient = getPatientOrThrow(patientId);
         if (doctor.getPatients().contains(patient)) {
             doctor.getPatients().remove(patient);

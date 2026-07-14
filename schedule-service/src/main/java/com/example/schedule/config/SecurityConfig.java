@@ -1,5 +1,6 @@
 package com.example.schedule.config;
 
+import com.example.schedule.security.ApiKeyAuthFilter;
 import com.example.schedule.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final ApiKeyAuthFilter apiKeyAuthFilter;
 
     @Value("${security.public-paths:}")
     private String publicPathsRaw;
@@ -38,6 +40,7 @@ public class SecurityConfig {
                     a.anyRequest().authenticated();
                 })
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .build();

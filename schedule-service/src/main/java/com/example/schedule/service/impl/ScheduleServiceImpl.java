@@ -7,6 +7,7 @@ import com.example.schedule.dto.ScheduleResponse;
 import com.example.schedule.entity.Schedule;
 import com.example.schedule.enums.ScheduleStatus;
 import com.example.schedule.exception.BusinessException;
+import com.example.schedule.exception.ForbiddenException;
 import com.example.schedule.exception.ResourceNotFoundException;
 import com.example.schedule.mapper.ScheduleMapper;
 import com.example.schedule.repository.ScheduleRepository;
@@ -82,7 +83,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     public void delete(Long scheduleId, Long doctorId) {
         Schedule schedule = getScheduleOrThrow(scheduleId);
         if (!schedule.getDoctorId().equals(doctorId))
-            throw new BusinessException("Not authorized to delete this schedule slot");
+            throw new ForbiddenException("Not authorized to delete this schedule slot");
         if (schedule.getStatus() == ScheduleStatus.BOOKED)
             throw new BusinessException("Cannot delete a booked schedule slot");
         scheduleRepository.delete(schedule);

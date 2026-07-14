@@ -7,14 +7,18 @@ A healthcare appointment scheduling platform built as a microservices system. Me
 ```
                   ┌─────────────────────────────────────────────────────────────────────┐
                   │                   gateway-service  :8080  (Spring Cloud Gateway)    │
-                  │  /api/auth/**                      → user-service                   │
-                  │  /api/personal/**                  → user-service                   │
-                  │  /api/patients/**                  → user-service                   │
-                  │  /api/specialties/**               → user-service                   │
-                  │  /api/roles                        → user-service                   │
-                  │  /api/schedules                    → schedule-service               │
-                  │  /api/personal/{id}/schedules/**   → schedule-service               │
-                  │  /api/appointments/**              → appointment-service            │
+                  │  /api/auth/**                        → user-service                │
+                  │  /api/personal/**                    → user-service                │
+                  │  /api/patients/**                    → user-service                │
+                  │  /api/specialties/**                 → user-service                │
+                  │  /api/roles                          → user-service                │
+                  │  /api/integrations/n8n/{specialties,  → user-service                │
+                  │    doctors,patients/lookup}                                        │
+                  │  /api/schedules                      → schedule-service            │
+                  │  /api/personal/{id}/schedules/**     → schedule-service            │
+                  │  /api/integrations/n8n/schedules     → schedule-service            │
+                  │  /api/appointments/**                → appointment-service         │
+                  │  /api/integrations/n8n/appointments  → appointment-service         │
                   └──────┬──────────────────────┬────────────────┬──────────────────────┘
                          │                      │                │
                          ▼                      ▼                ▼
@@ -36,9 +40,11 @@ A healthcare appointment scheduling platform built as a microservices system. Me
 
 Each service owns its own PostgreSQL database. Cross-service data is denormalized at write time (no cross-service JPA relationships).
 
-> **Note:** `appointment-service` also calls `schedule-service` directly via an internal API (`/internal/schedules/**`) that is not routed through the gateway. Each service contains its own copy of `JwtAuthFilter`, `JwtUtil`, `GlobalExceptionHandler`, and shared exception classes — there is no shared `common` library.
+> **Note:** `appointment-service` also calls `schedule-service` and `user-service` directly via internal APIs (`/internal/schedules/**`, `/internal/patients/**`) that are not routed through the gateway. Each service contains its own copy of `JwtAuthFilter`, `JwtUtil`, `GlobalExceptionHandler`, and shared exception classes — there is no shared `common` library.
 >
 > A `notification-service` (email notifications on appointment events via RabbitMQ) previously existed and has been removed pending a better implementation.
+>
+> See [Integration API (n8n)](#integration-api-n8n) below for the automated-booking facade, and [Concurrency](#concurrency) for how double-bookings are prevented.
 
 ## Tech Stack
 
@@ -78,7 +84,8 @@ On first startup each service seeds sample data: 3 specialties, 3 doctors + 1 re
 | Variable | Default | Used by |
 |---|---|---|
 | `JWT_SECRET` | *(required — min 32 chars)* | user, schedule, appointment services |
-| `USER_SERVICE_URL` | `http://user-service:8081` | gateway-service |
+| `N8N_API_KEY` | `change-me-n8n-key` | user, schedule, appointment services (validates `/api/integrations/n8n/**` callers) |
+| `USER_SERVICE_URL` | `http://user-service:8081` | appointment-service, gateway-service |
 | `SCHEDULE_SERVICE_URL` | `http://schedule-service:8082` | appointment-service, gateway-service |
 | `APPOINTMENT_SERVICE_URL` | `http://appointment-service:8083` | gateway-service |
 | `PERSONAL_SERVICE_URL` | `http://user-service:8081` | schedule-service |
@@ -181,17 +188,29 @@ Authorization: Bearer <jwt>
 
 Tokens expire after **24 hours**.
 
+### Service Integration Auth (n8n)
+
+A third, separate auth path exists for automated callers (currently an n8n WhatsApp workflow) that only know a patient's phone number, not a JWT. Requests to `/api/integrations/n8n/**` are authenticated by an API key instead:
+
+```http
+X-API-Key: <N8N_API_KEY>
+```
+
+A matching key grants a synthetic `ROLE_INTEGRATION` identity, scoped only to the `/api/integrations/n8n/**` endpoints — see [Integration API (n8n)](#integration-api-n8n) for the endpoint list.
+
 ### Public paths per service
 
 Each service permits a fixed, comma-separated list of path patterns (`security.public-paths` in its `application.yaml`); every other request must carry a valid Bearer JWT.
 
 | Service | `security.public-paths` |
 |---|---|
-| user-service | `/api/auth/**` |
+| user-service | `/api/auth/**`, `/internal/**` (internal only — not gateway-routed) |
 | schedule-service | `/internal/**` (internal only — not gateway-routed) |
 | appointment-service | *(none configured — every `/api/appointments/**` route requires a JWT)* |
 
 `/api/appointments/{id}/confirm`, `/cancel`, and `/reschedule` additionally read the caller's id straight from the JWT subject (`Authentication.getName()`), so they need a token issued by user-service regardless of the public-paths setting.
+
+`/api/integrations/n8n/**` on all three services sits outside `security.public-paths` — it's authenticated by a separate `ApiKeyAuthFilter` (see [Integration API (n8n)](#integration-api-n8n)) rather than being open or requiring a JWT.
 
 ---
 
@@ -362,6 +381,32 @@ All endpoints are reached through the gateway at `http://localhost:8080`. All li
 
 ---
 
+### Integration API (n8n)
+
+`→ user-service, schedule-service, appointment-service`
+
+Read-mostly booking facade for automated callers that only know a patient's phone number. Authenticated with `X-API-Key: <N8N_API_KEY>` instead of a JWT (see [Service Integration Auth](#service-integration-auth-n8n)) — **not** a Bearer token.
+
+| Method | Path | Routed to | Description |
+|---|---|---|---|
+| `GET` | `/api/integrations/n8n/specialties` | user-service | List all available specialties. |
+| `GET` | `/api/integrations/n8n/doctors?specialtyId=` | user-service | List active doctors for a specialty (paginated). |
+| `GET` | `/api/integrations/n8n/patients/lookup?phoneNumber=` | user-service | Find a registered patient by phone number. |
+| `GET` | `/api/integrations/n8n/schedules?doctorId=` | schedule-service | List a doctor's available slots (paginated). |
+| `POST` | `/api/integrations/n8n/appointments` | appointment-service | Book a slot for the patient matching `phoneNumber`. |
+
+**IntegrationBookingRequest**
+```json
+{
+  "phoneNumber": "+1-555-1001",
+  "scheduleId": 5
+}
+```
+
+`appointment-service` resolves `phoneNumber` → patient by calling user-service's internal `/internal/patients/lookup` endpoint (not gateway-routed), then books through the normal appointment flow — the response shape is the same `AppointmentResponse` as `POST /api/appointments`.
+
+---
+
 ## Appointment Lifecycle
 
 ```
@@ -393,9 +438,28 @@ All services return the same error structure:
 | HTTP Status | Cause |
 |---|---|
 | `400` | Invalid request body / failed bean validation |
+| `401` | Bad credentials or inactive account on login |
+| `403` | Caller doesn't own the resource they're acting on (e.g. a patient booking for someone else) |
 | `404` | Resource not found |
+| `409` | *(schedule-service's own API only — see [Concurrency](#concurrency))* Two requests booked the same slot at once |
 | `422` | Business rule violation (e.g., booking an already-booked slot) |
 | `500` | Unhandled server error |
+
+---
+
+## Concurrency
+
+`schedule-service`'s `Schedule` entity carries a JPA `@Version` column. If two requests try to book the same slot at the same time, the loser's transaction fails with `ObjectOptimisticLockingFailureException`, which `GlobalExceptionHandler` maps to `409 Conflict`:
+
+```json
+{
+  "timestamp": "2026-07-14T14:00:00",
+  "status": 409,
+  "message": "This schedule slot was just booked by someone else, please choose another"
+}
+```
+
+This 409 is only visible to callers of `schedule-service` directly. `POST /api/appointments` (the public booking flow) goes through `appointment-service`'s `ScheduleClient`, which catches any 4xx from the internal `/internal/schedules/{id}/book` call and re-throws it as its own `422 BusinessException` — so a losing race on the public API currently surfaces as `422`, not `409`.
 
 ---
 
@@ -414,12 +478,17 @@ scheduler-platform/
 │       ├── main/java/com/example/user/
 │       │   ├── controller/   # AuthController (patient + staff register/login), PersonalController
 │       │   │                 # PatientController, DoctorPatientController, SpecialtyController, RoleController
+│       │   │                 # IntegrationController (/api/integrations/n8n — API-key auth)
+│       │   │                 # PatientInternalController (/internal/patients/lookup, not gateway-routed)
 │       │   ├── service/      # AuthService, PersonalService, PatientService, RoleService + impls
 │       │   ├── repository/   # PersonalRepository, PatientRepository, SpecialtyRepository, RoleRepository
 │       │   ├── entity/       # Personal, Patient, Specialty, Role (DB-backed, seeded with DOCTOR/RECEPTIONIST)
 │       │   ├── enums/        # ERole (DOCTOR, RECEPTIONIST, PATIENT) — still used for the JWT role claim and comparisons
 │       │   ├── dto/          # Request/Response DTOs for all resources
 │       │   ├── mapper/       # PersonalMapper, PatientMapper, SpecialtyMapper, RoleMapper (MapStruct)
+│       │   ├── security/     # JwtAuthFilter, JwtUtil, SecurityUtils, ApiKeyAuthFilter (n8n)
+│       │   ├── exception/    # BusinessException(422), UnauthorizedException(401), ForbiddenException(403),
+│       │   │                 # ResourceNotFoundException(404), GlobalExceptionHandler
 │       │   └── config/       # SecurityConfig, DataSeeder
 │       └── test/java/com/example/user/service/impl/
 │           ├── AuthServiceImplTest
@@ -430,12 +499,17 @@ scheduler-platform/
 │       ├── main/java/com/example/schedule/
 │       │   ├── controller/   # ScheduleController (browse + doctor CRUD)
 │       │   │                 # ScheduleInternalController (/internal/schedules — book/release, not gateway-routed)
+│       │   │                 # IntegrationController (/api/integrations/n8n — API-key auth)
 │       │   ├── service/
 │       │   ├── repository/   # ScheduleRepository (single JPQL filter query with pagination)
-│       │   ├── entity/       # Schedule
+│       │   ├── entity/       # Schedule (carries a @Version column for optimistic locking on booking)
 │       │   ├── dto/
 │       │   ├── mapper/
 │       │   ├── client/       # PersonalClient (RestClient → user-service)
+│       │   ├── security/     # JwtAuthFilter, JwtUtil, SecurityUtils, ApiKeyAuthFilter (n8n)
+│       │   ├── exception/    # BusinessException(422), UnauthorizedException(401), ForbiddenException(403),
+│       │   │                 # ResourceNotFoundException(404), GlobalExceptionHandler (also maps
+│       │   │                 # ObjectOptimisticLockingFailureException → 409)
 │       │   └── config/       # SecurityConfig, DataSeeder
 │       └── test/java/com/example/schedule/service/impl/
 │           └── ScheduleServiceImplTest
@@ -443,6 +517,7 @@ scheduler-platform/
     └── src/
         ├── main/java/com/example/appointment/
         │   ├── controller/   # AppointmentController
+        │   │                 # IntegrationController (/api/integrations/n8n — API-key auth)
         │   ├── service/
         │   │   └── impl/     # AppointmentServiceImpl
         │   ├── repository/   # AppointmentRepository (single JPQL filter query with pagination)
@@ -450,6 +525,10 @@ scheduler-platform/
         │   ├── dto/
         │   ├── mapper/
         │   ├── client/       # ScheduleClient (RestClient → schedule-service internal API)
+        │   │                 # PatientClient (RestClient → user-service internal API)
+        │   ├── security/     # JwtAuthFilter, JwtUtil, SecurityUtils, ApiKeyAuthFilter (n8n)
+        │   ├── exception/    # BusinessException(422), UnauthorizedException(401), ForbiddenException(403),
+        │   │                 # ResourceNotFoundException(404), GlobalExceptionHandler
         │   └── config/       # SecurityConfig, DataSeeder
         └── test/java/com/example/appointment/service/impl/
             └── AppointmentServiceImplTest

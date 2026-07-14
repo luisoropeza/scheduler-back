@@ -23,5 +23,8 @@ cors:
 jwt:
   secret: ${JWT_SECRET}
 
+n8n:
+  api-key: ${N8N_API_KEY:change-me-n8n-key}
+
 security:
-  public-paths: /api/auth/**
+  public-paths: /api/auth/**,/internal/**

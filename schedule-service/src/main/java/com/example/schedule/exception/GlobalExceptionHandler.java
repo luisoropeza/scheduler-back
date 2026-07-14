@@ -3,6 +3,7 @@ package com.example.schedule.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -31,6 +32,36 @@ public class GlobalExceptionHandler {
                 ErrorResponse.builder()
                         .status(HttpStatus.UNPROCESSABLE_CONTENT.value())
                         .message(ex.getMessage())
+                        .timestamp(LocalDateTime.now())
+                        .build());
+    }
+
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthorized(UnauthorizedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ErrorResponse.builder()
+                        .status(HttpStatus.UNAUTHORIZED.value())
+                        .message(ex.getMessage())
+                        .timestamp(LocalDateTime.now())
+                        .build());
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                ErrorResponse.builder()
+                        .status(HttpStatus.FORBIDDEN.value())
+                        .message(ex.getMessage())
+                        .timestamp(LocalDateTime.now())
+                        .build());
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                ErrorResponse.builder()
+                        .status(HttpStatus.CONFLICT.value())
+                        .message("This schedule slot was just booked by someone else, please choose another")
                         .timestamp(LocalDateTime.now())
                         .build());
     }

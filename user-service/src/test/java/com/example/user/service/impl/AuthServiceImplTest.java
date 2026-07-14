@@ -10,6 +10,7 @@ import com.example.user.entity.Role;
 import com.example.user.entity.Specialty;
 import com.example.user.enums.ERole;
 import com.example.user.exception.BusinessException;
+import com.example.user.exception.UnauthorizedException;
 import com.example.user.exception.ResourceNotFoundException;
 import com.example.user.mapper.PatientMapper;
 import com.example.user.mapper.PersonalMapper;
@@ -140,34 +141,34 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void loginPatient_emailNotFound_throwsBusinessException() {
+    void loginPatient_emailNotFound_throwsUnauthorizedException() {
         when(patientRepository.findByEmail("john@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.loginPatient(loginRequest("john@example.com")))
-                .isInstanceOf(BusinessException.class)
+                .isInstanceOf(UnauthorizedException.class)
                 .hasMessageContaining("Invalid credentials");
     }
 
     @Test
-    void loginPatient_inactiveAccount_throwsBusinessException() {
+    void loginPatient_inactiveAccount_throwsUnauthorizedException() {
         Patient patient = Patient.builder().id(1L).email("john@example.com")
                 .password("hashed").active(false).build();
         when(patientRepository.findByEmail("john@example.com")).thenReturn(Optional.of(patient));
 
         assertThatThrownBy(() -> authService.loginPatient(loginRequest("john@example.com")))
-                .isInstanceOf(BusinessException.class)
+                .isInstanceOf(UnauthorizedException.class)
                 .hasMessageContaining("inactive");
     }
 
     @Test
-    void loginPatient_wrongPassword_throwsBusinessException() {
+    void loginPatient_wrongPassword_throwsUnauthorizedException() {
         Patient patient = Patient.builder().id(1L).email("john@example.com")
                 .password("hashed").active(true).build();
         when(patientRepository.findByEmail("john@example.com")).thenReturn(Optional.of(patient));
         when(passwordEncoder.matches("password123", "hashed")).thenReturn(false);
 
         assertThatThrownBy(() -> authService.loginPatient(loginRequest("john@example.com")))
-                .isInstanceOf(BusinessException.class)
+                .isInstanceOf(UnauthorizedException.class)
                 .hasMessageContaining("Invalid credentials");
     }
 
@@ -293,34 +294,34 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void loginPersonal_emailNotFound_throwsBusinessException() {
+    void loginPersonal_emailNotFound_throwsUnauthorizedException() {
         when(personalRepository.findByEmail("dr@clinic.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.loginPersonal(loginRequest("dr@clinic.com")))
-                .isInstanceOf(BusinessException.class)
+                .isInstanceOf(UnauthorizedException.class)
                 .hasMessageContaining("Invalid credentials");
     }
 
     @Test
-    void loginPersonal_inactiveAccount_throwsBusinessException() {
+    void loginPersonal_inactiveAccount_throwsUnauthorizedException() {
         Personal personal = Personal.builder().id(1L).email("dr@clinic.com")
                 .password("hashed").role(doctorRole()).active(false).build();
         when(personalRepository.findByEmail("dr@clinic.com")).thenReturn(Optional.of(personal));
 
         assertThatThrownBy(() -> authService.loginPersonal(loginRequest("dr@clinic.com")))
-                .isInstanceOf(BusinessException.class)
+                .isInstanceOf(UnauthorizedException.class)
                 .hasMessageContaining("inactive");
     }
 
     @Test
-    void loginPersonal_wrongPassword_throwsBusinessException() {
+    void loginPersonal_wrongPassword_throwsUnauthorizedException() {
         Personal personal = Personal.builder().id(1L).email("dr@clinic.com")
                 .password("hashed").role(doctorRole()).active(true).build();
         when(personalRepository.findByEmail("dr@clinic.com")).thenReturn(Optional.of(personal));
         when(passwordEncoder.matches("password123", "hashed")).thenReturn(false);
 
         assertThatThrownBy(() -> authService.loginPersonal(loginRequest("dr@clinic.com")))
-                .isInstanceOf(BusinessException.class)
+                .isInstanceOf(UnauthorizedException.class)
                 .hasMessageContaining("Invalid credentials");
     }
 }

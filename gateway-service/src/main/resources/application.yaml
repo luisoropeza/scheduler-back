@@ -25,3 +25,15 @@ spring:
               uri: ${APPOINTMENT_SERVICE_URL}
               predicates:
                 - Path=/api/appointments,/api/appointments/**
+            - id: user-integrations
+              uri: ${USER_SERVICE_URL}
+              predicates:
+                - Path=/api/integrations/n8n/specialties,/api/integrations/n8n/doctors,/api/integrations/n8n/patients/lookup
+            - id: schedule-integrations
+              uri: ${SCHEDULE_SERVICE_URL}
+              predicates:
+                - Path=/api/integrations/n8n/schedules
+            - id: appointment-integrations
+              uri: ${APPOINTMENT_SERVICE_URL}
+              predicates:
+                - Path=/api/integrations/n8n/appointments
