@@ -56,7 +56,7 @@ On first startup (only when the `specialty` table is empty), `DataSeeder` seeds 
 
 Interactive API docs (Swagger UI) are available at `http://localhost:8080/swagger-ui/index.html` once the app is running, backed by the OpenAPI spec at `/v3/api-docs`.
 
-Authentication is JWT-based: register or log in via `/api/auth/**` to get a token, then send it as `Authorization: Bearer <token>` on subsequent requests. Endpoints are grouped below by resource; roles are `DOCTOR`, `RECEPCIONIST`, `PATIENT`.
+Authentication is JWT-based: register or log in via `/api/auth/**` to get a token, then send it as `Authorization: Bearer <token>` on subsequent requests. Endpoints are grouped below by resource; roles are `DOCTOR`, `RECEPTIONIST`, `PATIENT`.
 
 ### Auth (`/api/auth`) — public
 

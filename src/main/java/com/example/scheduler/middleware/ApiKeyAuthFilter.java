@@ -1,4 +1,4 @@
-package com.example.scheduler.security;
+package com.example.scheduler.middleware;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

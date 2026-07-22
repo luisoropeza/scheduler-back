@@ -1,7 +1,7 @@
 package com.example.scheduler.config;
 
-import com.example.scheduler.security.ApiKeyAuthFilter;
-import com.example.scheduler.security.JwtAuthFilter;
+import com.example.scheduler.middleware.ApiKeyAuthFilter;
+import com.example.scheduler.middleware.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;

@@ -2,13 +2,13 @@ package com.example.scheduler.controller;
 
 import com.example.scheduler.dto.AppointmentRequest;
 import com.example.scheduler.dto.AppointmentResponse;
-import com.example.scheduler.dto.IntegrationBookingRequest;
 import com.example.scheduler.dto.PatientResponse;
 import com.example.scheduler.dto.PersonalResponse;
 import com.example.scheduler.dto.ScheduleResponse;
 import com.example.scheduler.dto.SpecialtyResponse;
 import com.example.scheduler.enums.ERole;
 import com.example.scheduler.enums.ScheduleStatus;
+import com.example.scheduler.middleware.ApiKeyAuthFilter;
 import com.example.scheduler.service.AppointmentService;
 import com.example.scheduler.service.PatientService;
 import com.example.scheduler.service.PersonalService;
@@ -32,7 +32,7 @@ import java.util.List;
 
 /**
  * Read-only browsing + booking facade for automated callers (currently the n8n WhatsApp
- * workflow). Authenticated via a static API key ({@link com.example.scheduler.security.ApiKeyAuthFilter}),
+ * workflow). Authenticated via a static API key ({@link ApiKeyAuthFilter}),
  * not a per-patient JWT, since the caller only knows the patient's phone number.
  */
 @RestController
@@ -79,12 +79,8 @@ public class IntegrationController {
 
     @PostMapping("/appointments")
     @Operation(summary = "POST /api/integrations/n8n/appointments — book a schedule slot for the patient identified by phoneNumber")
-    public ResponseEntity<AppointmentResponse> book(@Valid @RequestBody IntegrationBookingRequest request) {
-        PatientResponse patient = patientService.findByPhoneNumber(request.getPhoneNumber());
-        AppointmentRequest appointmentRequest = new AppointmentRequest();
-        appointmentRequest.setScheduleId(request.getScheduleId());
-        appointmentRequest.setClientId(patient.getId());
+    public ResponseEntity<AppointmentResponse> book(@Valid @RequestBody AppointmentRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(appointmentService.book(appointmentRequest, patient.getId(), ERole.PATIENT.name()));
+                .body(appointmentService.book(request, request.getClientId(), ERole.PATIENT.name()));
     }
 }

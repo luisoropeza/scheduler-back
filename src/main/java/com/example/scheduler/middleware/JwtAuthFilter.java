@@ -1,5 +1,6 @@
-package com.example.scheduler.security;
+package com.example.scheduler.middleware;
 
+import com.example.scheduler.security.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
