@@ -10,7 +10,7 @@ import java.lang.annotation.*;
 @Target({ ElementType.TYPE })
 @Retention(RetentionPolicy.RUNTIME)
 public @interface SpecialtyRoleMatch {
-    String message() default "The doctor role should have a specialty";
+    String message() default "";
 
     String first();
     String second();

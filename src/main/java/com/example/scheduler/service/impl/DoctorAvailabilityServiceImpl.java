@@ -3,11 +3,9 @@ package com.example.scheduler.service.impl;
 import com.example.scheduler.dto.DoctorAvailability.DoctorAvailabilitySlotsResponse;
 import com.example.scheduler.dto.DoctorAvailability.DoctorAvailabilityRequest;
 import com.example.scheduler.dto.DoctorAvailability.DoctorAvailabilityResponse;
-import com.example.scheduler.entity.Appointment;
 import com.example.scheduler.entity.DoctorAvailability;
-import com.example.scheduler.entity.Personal;
-import com.example.scheduler.entity.ScheduleException;
 import com.example.scheduler.enums.AppointmentStatus;
+import com.example.scheduler.exception.BadRequestException;
 import com.example.scheduler.exception.ResourceNotFoundException;
 import com.example.scheduler.mapper.DoctorAvailabilityMapper;
 import com.example.scheduler.repository.AppointmentRepository;
@@ -19,9 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,7 +36,7 @@ public class DoctorAvailabilityServiceImpl implements DoctorAvailabilityService 
     @Transactional
     public DoctorAvailabilityResponse addDoctorAvailability(Long doctorId, DoctorAvailabilityRequest request) {
         if (request.startTime().isAfter(request.endTime()) || request.startTime().equals(request.endTime()))
-            throw new IllegalArgumentException("the start time must be after the end time");
+            throw new BadRequestException("the start time must be after the end time");
         var doctor = personalRepository.findById(doctorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Doctor not found with id: " + doctorId));
         var availability = DoctorAvailability.builder()
