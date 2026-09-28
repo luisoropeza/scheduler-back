@@ -68,11 +68,11 @@ public class PersonalServiceImpl implements PersonalService {
                     return personalMapper.toEntity(request);
                 });
         var role = getRoleOrThrowById(request.roleId());
-        if(!role.getName().equals(ERole.DOCTOR) && !role.getName().equals(ERole.RECEPTIONIST))
+        if(!role.getName().equals(ERole.DOCTOR) && !role.getName().equals(ERole.ASSISTANT))
             throw new ForbiddenException("Role " + role.getName() + " is not allowed to create");
         personal.setRole(role);
         personal.getAccount().setPassword(passwordEncoder.encode(request.password()));
-        if(role.getName().equals(ERole.RECEPTIONIST)){
+        if(role.getName().equals(ERole.ASSISTANT)){
             var specialty = specialtyRepository.getByName(ESpecialty.DEFAULT.getDisplayName());
             personal.setSpecialty(specialty);
         } else if(role.getName().equals(ERole.DOCTOR)) {
