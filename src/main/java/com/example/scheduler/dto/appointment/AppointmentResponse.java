@@ -7,10 +7,9 @@ import java.time.LocalDateTime;
 public record AppointmentResponse(
         Long id,
 
-        // Schedule
-        Long scheduleId,
-        LocalDateTime scheduleStart,
-        LocalDateTime scheduleEnd,
+        // Schedule=
+        LocalDateTime startTime,
+        LocalDateTime endTime,
 
         // Doctor
         Long doctorId,
@@ -19,9 +18,9 @@ public record AppointmentResponse(
         String doctorEmail,
 
         // Client
-        Long clientId,
-        String clientName,
-        String clientEmail,
+        Long patientId,
+        String patientName,
+        String patientEmail,
 
         String status,
         LocalDateTime createdAt

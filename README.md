@@ -60,7 +60,7 @@ On first startup (only when the `clinic` table is empty), `DataSeeder` seeds two
 
 ## Multi-tenancy
 
-Every clinic (`Clinic`) is a tenant. Tenant-scoped entities (`Specialty`, `Personal`, `Patient`, `Schedule`, `Appointment`) carry a `clinicId` column and are automatically filtered by it on every query via Hibernate's discriminator-based multi-tenancy. `Role` and `Clinic` itself are shared across all tenants.
+Every clinic (`Clinic`) is a tenant. Tenant-scoped entities (`Specialty`, `Personal`, `Patient`, `DoctorAvailability`, `Appointment`) carry a `clinicId` column and are automatically filtered by it on every query via Hibernate's discriminator-based multi-tenancy. `Role` and `Clinic` itself are shared across all tenants.
 
 **Every request to a non-public endpoint must include an `X-Tenant-ID` header** set to the numeric clinic id — requests without it are rejected with `400 Bad Request` before authentication is even checked. If the request also carries a JWT, the header's clinic id must match the `clinicId` claim embedded in the token at login/registration time, or the request is rejected with `403 Forbidden`.
 

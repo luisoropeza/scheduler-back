@@ -2,9 +2,13 @@ package com.example.scheduler.dto.appointment;
 
 import jakarta.validation.constraints.NotNull;
 
+import java.time.LocalDateTime;
+
 public record AppointmentRequest(
         @NotNull
-        Long scheduleId,
+        Long doctorId,
         @NotNull
-        Long patientId
+        Long patientId,
+        LocalDateTime startTime,
+        LocalDateTime endTime
 ) {}

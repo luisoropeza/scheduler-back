@@ -3,7 +3,6 @@ package com.example.scheduler.controller;
 import com.example.scheduler.dto.appointment.AppointmentRequest;
 import com.example.scheduler.dto.appointment.AppointmentResponse;
 import com.example.scheduler.dto.appointment.AppointmentSummaryItem;
-import com.example.scheduler.dto.schedule.RescheduleRequest;
 import com.example.scheduler.enums.AppointmentStatus;
 import com.example.scheduler.enums.ERole;
 import com.example.scheduler.security.SecurityUtils;
@@ -36,9 +35,7 @@ public class AppointmentController {
 
     @PostMapping
     @Operation(summary = "POST /api/appointments — book an appointment for a patient on a given schedule slot")
-    public ResponseEntity<AppointmentResponse> bookAppointment(@Valid @RequestBody AppointmentRequest request, Authentication auth) {
-        if(SecurityUtils.extractRole(auth).equals(ERole.PATIENT.name()))
-            return ResponseEntity.status(HttpStatus.CREATED).body(appointmentService.bookAppointment(request, Long.parseLong(auth.getName())));
+    public ResponseEntity<AppointmentResponse> bookAppointment(@Valid @RequestBody AppointmentRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(appointmentService.bookAppointment(request));
     }
 
@@ -94,13 +91,6 @@ public class AppointmentController {
     @Operation(summary = "PATCH /api/appointments/{id}/cancelAppointmentById — cancel an appointment, releases the slot back to AVAILABLE")
     public ResponseEntity<AppointmentResponse> cancelAppointmentById(@PathVariable Long appointmentId, Authentication auth) {
         return ResponseEntity.ok(appointmentService.cancelAppointmentById(appointmentId, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
-    }
-
-    @PatchMapping("/{appointmentId}/reschedule")
-    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
-    @Operation(summary = "PATCH /api/appointments/{id}/rescheduleAppointmentById — move an appointment to a new schedule slot (body: {scheduleId})")
-    public ResponseEntity<AppointmentResponse> rescheduleAppointmentById(@PathVariable Long appointmentId, @RequestBody RescheduleRequest request, Authentication auth) {
-        return ResponseEntity.ok(appointmentService.rescheduleAppointmentById(appointmentId, request, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
 
     @GetMapping("/board")
