@@ -79,7 +79,7 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .patient(patient)
                 .startTime(request.startTime())
                 .endTime(request.endTime())
-                .status(AppointmentStatus.PENDING)
+                .status(AppointmentStatus.CONFIRMED)
                 .build();
 
         return appointmentMapper.toResponse(appointmentRepository.save(appointment));
