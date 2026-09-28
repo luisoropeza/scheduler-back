@@ -40,7 +40,7 @@ public class AppointmentController {
     }
 
     @GetMapping("/{appointmentId}")
-    @Operation(summary = "GET /api/appointments/{id} — get an appointment details by Id")
+    @Operation(summary = "GET /api/appointments/{id} — get an appointment details by id")
     public ResponseEntity<AppointmentResponse> findAppointmentById(@PathVariable Long appointmentId, Authentication auth) {
         return ResponseEntity.ok(appointmentService.findAppointmentById(appointmentId, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
@@ -81,14 +81,14 @@ public class AppointmentController {
 
     @PatchMapping("/{appointmentId}/confirm")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
-    @Operation(summary = "PATCH /api/appointments/{id}/confirmAppointmentById — confirm a pending appointment")
+    @Operation(summary = "PATCH /api/appointments/{id}/confirm — confirm a pending appointment")
     public ResponseEntity<AppointmentResponse> confirmAppointmentById(@PathVariable Long appointmentId, Authentication auth) {
         return ResponseEntity.ok(appointmentService.confirmAppointmentById(appointmentId, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
 
     @PatchMapping("/{appointmentId}/cancel")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
-    @Operation(summary = "PATCH /api/appointments/{id}/cancelAppointmentById — cancel an appointment, releases the slot back to AVAILABLE")
+    @Operation(summary = "PATCH /api/appointments/{id}/cancel — cancel an appointment, releases the slot back to AVAILABLE")
     public ResponseEntity<AppointmentResponse> cancelAppointmentById(@PathVariable Long appointmentId, Authentication auth) {
         return ResponseEntity.ok(appointmentService.cancelAppointmentById(appointmentId, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }

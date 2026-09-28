@@ -23,7 +23,7 @@ public class ScheduleExceptionServiceImpl implements ScheduleExceptionService {
 
     @Override
     @Transactional
-    public ScheduleExceptionResponse addException(Long doctorId, ScheduleExceptionRequest request) {
+    public ScheduleExceptionResponse addDoctorScheduleException(Long doctorId, ScheduleExceptionRequest request) {
         Personal doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Doctor not found with id: " + doctorId));
         ScheduleException scheduleException = ScheduleException.builder()

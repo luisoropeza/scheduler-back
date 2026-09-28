@@ -1,6 +1,6 @@
 package com.example.scheduler.service.impl;
 
-import com.example.scheduler.dto.DoctorAvailability.AvailabilitySlotsResponse;
+import com.example.scheduler.dto.DoctorAvailability.DoctorAvailabilitySlotsResponse;
 import com.example.scheduler.dto.DoctorAvailability.DoctorAvailabilityRequest;
 import com.example.scheduler.dto.DoctorAvailability.DoctorAvailabilityResponse;
 import com.example.scheduler.entity.Appointment;
@@ -16,7 +16,6 @@ import com.example.scheduler.repository.PersonalRepository;
 import com.example.scheduler.repository.ScheduleExceptionRepository;
 import com.example.scheduler.service.DoctorAvailabilityService;
 import lombok.RequiredArgsConstructor;
-import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,7 +38,7 @@ public class DoctorAvailabilityServiceImpl implements DoctorAvailabilityService 
 
     @Override
     @Transactional
-    public DoctorAvailabilityResponse addAvailability(Long doctorId, DoctorAvailabilityRequest request) {
+    public DoctorAvailabilityResponse addDoctorAvailability(Long doctorId, DoctorAvailabilityRequest request) {
         if (request.startTime().isAfter(request.endTime()) || request.startTime().equals(request.endTime()))
             throw new IllegalArgumentException("the start time must be after the end time");
         Personal doctor = personalRepository.findById(doctorId)
@@ -61,17 +60,17 @@ public class DoctorAvailabilityServiceImpl implements DoctorAvailabilityService 
     }
 
     @Override
-    public AvailabilitySlotsResponse getAvailableSlots(Long doctorId, LocalDate date) {
+    public DoctorAvailabilitySlotsResponse getDoctorAvailableSlots(Long doctorId, LocalDate date) {
         boolean isFullDayBlocked = scheduleExceptionRepository.existsByDoctorIdAndDateAndIsFullDayBlockTrue(doctorId, date);
         if (isFullDayBlocked) {
-            return new AvailabilitySlotsResponse(date, doctorId, List.of());
+            return new DoctorAvailabilitySlotsResponse(date, doctorId, List.of());
         }
         DayOfWeek dayOfWeek = date.getDayOfWeek();
         List<DoctorAvailability> availabilities = availabilityRepository
                 .findByDoctorIdAndDayOfWeekAndActiveTrue(doctorId, dayOfWeek);
 
         if (availabilities.isEmpty()) {
-            return new AvailabilitySlotsResponse(date, doctorId, List.of());
+            return new DoctorAvailabilitySlotsResponse(date, doctorId, List.of());
         }
         List<LocalTime> generatedSlots = createGeneratedSlots(availabilities);
         List<ScheduleException> partialExceptions = scheduleExceptionRepository.findByDoctorIdAndDate(doctorId, date)
@@ -98,7 +97,7 @@ public class DoctorAvailabilityServiceImpl implements DoctorAvailabilityService 
                 .filter(slot -> !bookedStartTimes.contains(slot))
                 .sorted()
                 .toList();
-        return new AvailabilitySlotsResponse(date, doctorId, availableSlots);
+        return new DoctorAvailabilitySlotsResponse(date, doctorId, availableSlots);
     }
 
     private List<LocalTime> createGeneratedSlots(List<DoctorAvailability> availabilities) {

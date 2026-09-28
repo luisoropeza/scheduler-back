@@ -21,21 +21,35 @@ CREATE TABLE IF NOT EXISTS {schema}.patients (
     CONSTRAINT uq_{schema}_patients_account UNIQUE (patient_account_id)
 );
 
-CREATE TABLE IF NOT EXISTS {schema}.schedules (
-    id BIGSERIAL PRIMARY KEY,
-    doctor_id BIGINT NOT NULL REFERENCES {schema}.personal(id),
-    start_time TIMESTAMP NOT NULL,
-    end_time TIMESTAMP NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'AVAILABLE',
-    version BIGINT
-);
-
 CREATE TABLE IF NOT EXISTS {schema}.appointments (
     id BIGSERIAL PRIMARY KEY,
-    schedule_id BIGINT NOT NULL REFERENCES {schema}.schedules(id),
+    doctor_id BIGINT NOT NULL REFERENCES {schema}.personal(id),
     patient_id BIGINT NOT NULL REFERENCES {schema}.patients(id),
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    version BIGINT,
     created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.doctor_availabilities (
+    id BIGSERIAL PRIMARY KEY,
+    doctor_id BIGINT NOT NULL REFERENCES {schema}.personal(id),
+    day_of_week VARCHAR(50) NOT NULL,
+    start_time TIME WITHOUT TIME ZONE NOT NULL,
+    end_time TIME WITHOUT TIME ZONE NOT NULL,
+    slot_duration_minutes INT NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.schedule_exceptions (
+    id BIGSERIAL PRIMARY KEY,
+    doctor_id BIGINT NOT NULL REFERENCES {schema}.personal(id),
+    date DATE NOT NULL,
+    start_time TIME WITHOUT TIME ZONE,
+    end_time TIME WITHOUT TIME ZONE,
+    is_full_day_block BOOLEAN NOT NULL,
+    reason VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS {schema}.doctor_patient (

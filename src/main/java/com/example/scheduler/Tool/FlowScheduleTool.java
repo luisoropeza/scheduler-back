@@ -26,19 +26,19 @@ public class FlowScheduleTool {
     private final PatientMapper patientMapper;
 
 
-    @Tool(description = "Paso 1.- Este metodo te ayudara a obtener la informacion del usuario que se esta comunicando contigo", name = "getPatientUser")
+    @Tool(description = "Step 1: Return the patient information", name = "getPatientUser")
     public PatientResponse getPatientUser(){
         String patientId = Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getName();
         Patient patient = getPatientOrThrowById(Long.parseLong(patientId));
         return patientMapper.toResponse(patient);
     }
 
-    @Tool(description = "Paso 1.- Este metodo te devolvera las especialidades disponibles", name = "findAllSpecialties")
+    @Tool(description = "Step 2: Return the specialties", name = "findAllSpecialties")
     public List<SpecialtyResponse> findAllSpecialties(){
         return specialtyMapper.toResponseList(specialtyRepository.findAll());
     }
 
-    @Tool(description = "Paso 2.- Este metodo te devolvera las especialidades bajo el parametro specialtyId", name = "findAllDoctors")
+    @Tool(description = "Step3: Return the doctors by specialtyId", name = "findAllDoctors")
     public List<PersonalResponse> findAllDoctors(Long specialtyId){
         if(specialtyId != null)
             getSpecialtyOrThrowById(specialtyId);

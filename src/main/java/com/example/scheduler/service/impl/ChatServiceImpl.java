@@ -15,11 +15,7 @@ public class ChatServiceImpl implements ChatService {
 
     public ChatServiceImpl(ChatClient.Builder chatClientBuilder, HttpSession httpSession, FlowScheduleTool flowScheduleTool) {
         this.chatClient = chatClientBuilder
-                .defaultSystem("Eres un asistente de una clinica medica y ayudaras a los usuarios a que puedan agendar citas, " +
-                        "el flujo para este objetivo es el siguiente -> especialidades -> doctores bajo la especialidad elegida " +
-                        "-> horarios bajo el doctor elegido -> crear la cita con el horario escogido y el id del usuario, " +
-                        "la primera interaccion con el usuario es ser cordial saludandolo por su nombre " +
-                        "y mostrar las especialidades disponibles")
+                .defaultSystem("You are a virtual assistant that help to the users schedules their appointments")
                 .build();
         this.httpSession = httpSession;
         this.flowScheduleTool = flowScheduleTool;
