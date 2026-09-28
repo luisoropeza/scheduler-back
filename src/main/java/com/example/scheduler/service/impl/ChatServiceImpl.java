@@ -23,7 +23,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public String schedule(String message, Long userId) {
-        String id = userId + ":" + httpSession.getId();
+        var id = userId + ":" + httpSession.getId();
         return chatClient.prompt()
                 .user(message)
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, id))

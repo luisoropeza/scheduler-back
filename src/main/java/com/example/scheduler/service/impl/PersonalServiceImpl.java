@@ -41,18 +41,15 @@ public class PersonalServiceImpl implements PersonalService {
 
     @Override
     public Page<PersonalResponse> findAllDoctors(Long specialtyId, Boolean isActive, Pageable pageable) {
-        if(specialtyId != null)
-            getSpecialtyOrThrowById(specialtyId);
+        if(specialtyId != null) getSpecialtyOrThrowById(specialtyId);
         return personalRepository.findAllDoctorsByFilters(specialtyId, isActive, pageable)
                 .map(personalMapper::toResponse);
     }
 
     @Override
     public Page<PersonalResponse> findAllPersonal(Long specialtyId, Boolean isActive, Long roleId, Pageable pageable) {
-        if(specialtyId != null)
-            getSpecialtyOrThrowById(specialtyId);
-        if(roleId != null)
-            getRoleOrThrowById(roleId);
+        if(specialtyId != null) getSpecialtyOrThrowById(specialtyId);
+        if(roleId != null) getRoleOrThrowById(roleId);
         return personalRepository.findAllByFilters(specialtyId, isActive, roleId, pageable)
                 .map(personalMapper::toResponse);
     }

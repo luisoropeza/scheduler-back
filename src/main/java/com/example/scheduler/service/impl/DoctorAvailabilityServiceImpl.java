@@ -41,9 +41,9 @@ public class DoctorAvailabilityServiceImpl implements DoctorAvailabilityService 
     public DoctorAvailabilityResponse addDoctorAvailability(Long doctorId, DoctorAvailabilityRequest request) {
         if (request.startTime().isAfter(request.endTime()) || request.startTime().equals(request.endTime()))
             throw new IllegalArgumentException("the start time must be after the end time");
-        Personal doctor = personalRepository.findById(doctorId)
+        var doctor = personalRepository.findById(doctorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Doctor not found with id: " + doctorId));
-        DoctorAvailability availability = DoctorAvailability.builder()
+        var availability = DoctorAvailability.builder()
                 .doctor(doctor)
                 .dayOfWeek(request.dayOfWeek())
                 .startTime(request.startTime())
@@ -61,39 +61,36 @@ public class DoctorAvailabilityServiceImpl implements DoctorAvailabilityService 
 
     @Override
     public DoctorAvailabilitySlotsResponse getDoctorAvailableSlots(Long doctorId, LocalDate date) {
-        boolean isFullDayBlocked = scheduleExceptionRepository.existsByDoctorIdAndDateAndIsFullDayBlockTrue(doctorId, date);
-        if (isFullDayBlocked) {
+        var isFullDayBlocked = scheduleExceptionRepository.existsByDoctorIdAndDateAndIsFullDayBlockTrue(doctorId, date);
+        if (isFullDayBlocked)
             return new DoctorAvailabilitySlotsResponse(date, doctorId, List.of());
-        }
-        DayOfWeek dayOfWeek = date.getDayOfWeek();
-        List<DoctorAvailability> availabilities = availabilityRepository
+        var dayOfWeek = date.getDayOfWeek();
+        var availabilities = availabilityRepository
                 .findByDoctorIdAndDayOfWeekAndActiveTrue(doctorId, dayOfWeek);
-
-        if (availabilities.isEmpty()) {
+        if (availabilities.isEmpty())
             return new DoctorAvailabilitySlotsResponse(date, doctorId, List.of());
-        }
-        List<LocalTime> generatedSlots = createGeneratedSlots(availabilities);
-        List<ScheduleException> partialExceptions = scheduleExceptionRepository.findByDoctorIdAndDate(doctorId, date)
+        var generatedSlots = createGeneratedSlots(availabilities);
+        var partialExceptions = scheduleExceptionRepository.findByDoctorIdAndDate(doctorId, date)
                 .stream()
                 .filter(e -> !e.getIsFullDayBlock() && e.getStartTime() != null && e.getEndTime() != null)
                 .toList();
-        List<LocalTime> slotsAfterExceptions = generatedSlots.stream()
+        var slotsAfterExceptions = generatedSlots.stream()
                 .filter(slot -> partialExceptions.stream().noneMatch(e ->
                         !slot.isBefore(e.getStartTime()) && slot.isBefore(e.getEndTime())
                 ))
                 .toList();
-        LocalDateTime startOfDay = date.atStartOfDay();
-        LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        List<Appointment> existingAppointments = appointmentRepository.findByDoctorIdAndStartTimeBetweenAndStatusNot(
+        var startOfDay = date.atStartOfDay();
+        var endOfDay = date.atTime(LocalTime.MAX);
+        var existingAppointments = appointmentRepository.findByDoctorIdAndStartTimeBetweenAndStatusNot(
                 doctorId,
                 startOfDay,
                 endOfDay,
                 AppointmentStatus.CANCELLED
         );
-        List<LocalTime> bookedStartTimes = existingAppointments.stream()
+        var bookedStartTimes = existingAppointments.stream()
                 .map(a -> a.getStartTime().toLocalTime())
                 .toList();
-        List<LocalTime> availableSlots = slotsAfterExceptions.stream()
+        var availableSlots = slotsAfterExceptions.stream()
                 .filter(slot -> !bookedStartTimes.contains(slot))
                 .sorted()
                 .toList();
@@ -101,12 +98,11 @@ public class DoctorAvailabilityServiceImpl implements DoctorAvailabilityService 
     }
 
     private List<LocalTime> createGeneratedSlots(List<DoctorAvailability> availabilities) {
-        List<LocalTime> generatedSlots = new ArrayList<>();
+        var generatedSlots = new ArrayList<LocalTime>();
         for (DoctorAvailability availability : availabilities) {
             LocalTime current = availability.getStartTime();
             LocalTime end = availability.getEndTime();
             int duration = availability.getSlotDurationMinutes();
-
             while (current.plusMinutes(duration).isBefore(end) || current.plusMinutes(duration).equals(end)) {
                 generatedSlots.add(current);
                 current = current.plusMinutes(duration);

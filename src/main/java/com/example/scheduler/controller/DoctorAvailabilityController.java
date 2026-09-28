@@ -32,7 +32,7 @@ public class DoctorAvailabilityController {
     @GetMapping("/{doctorId}")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT', 'PATIENT')")
     public ResponseEntity<List<DoctorAvailabilityResponse>> getAllDoctorAvailability(@PathVariable Long doctorId, Authentication auth){
-        String role = SecurityUtils.extractRole(auth);
+        var role = SecurityUtils.extractRole(auth);
         if(role.equals(ERole.DOCTOR.name()))
             return ResponseEntity.ok(doctorAvailabilityService.getDoctorAvailabilities(Long.parseLong(auth.getName())));
         return ResponseEntity.ok(doctorAvailabilityService.getDoctorAvailabilities(doctorId));
@@ -41,7 +41,7 @@ public class DoctorAvailabilityController {
     @GetMapping("/{doctorId}/availables")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT', 'PATIENT')")
     public ResponseEntity<DoctorAvailabilitySlotsResponse> getDoctorAvailabilitySlots(@PathVariable Long doctorId, @RequestParam LocalDate date, Authentication auth){
-        String role = SecurityUtils.extractRole(auth);
+        var role = SecurityUtils.extractRole(auth);
         if (role.equals(ERole.DOCTOR.name()))
             return  ResponseEntity.ok(doctorAvailabilityService.getDoctorAvailableSlots(Long.parseLong(auth.getName()), date));
         return ResponseEntity.ok(doctorAvailabilityService.getDoctorAvailableSlots(doctorId, date));

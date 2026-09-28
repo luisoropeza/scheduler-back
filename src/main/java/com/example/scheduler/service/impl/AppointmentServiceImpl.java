@@ -48,23 +48,23 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     @Transactional
     public AppointmentResponse bookAppointment(AppointmentRequest request) {
-        LocalDate appointmentDate = request.startTime().toLocalDate();
-        LocalTime requestedStartTime = request.startTime().toLocalTime();
-        DayOfWeek dayOfWeek = appointmentDate.getDayOfWeek();
-        boolean isBlocked = scheduleExceptionRepository.existsByDoctorIdAndDateAndIsFullDayBlockTrue(
+        var appointmentDate = request.startTime().toLocalDate();
+        var requestedStartTime = request.startTime().toLocalTime();
+        var dayOfWeek = appointmentDate.getDayOfWeek();
+        var isBlocked = scheduleExceptionRepository.existsByDoctorIdAndDateAndIsFullDayBlockTrue(
                 request.doctorId(), appointmentDate
         );
         if (isBlocked)
             throw new BusinessException("That schedule is blocked");
-        List<DoctorAvailability> availabilities = doctorAvailabilityRepository
+        var availabilities = doctorAvailabilityRepository
                 .findByDoctorIdAndDayOfWeekAndActiveTrue(request.doctorId(), dayOfWeek);
-        boolean fitsInAvailability = availabilities.stream().anyMatch(a ->
+        var fitsInAvailability = availabilities.stream().anyMatch(a ->
                 !requestedStartTime.isBefore(a.getStartTime()) &&
                         !request.endTime().toLocalTime().isAfter(a.getEndTime())
         );
         if (!fitsInAvailability)
             throw new BusinessException("That Schedule is out of journey");
-        boolean isSlotTaken = appointmentRepository.existsOverlappingAppointment(
+        var isSlotTaken = appointmentRepository.existsOverlappingAppointment(
                 request.doctorId(),
                 request.startTime(),
                 request.endTime(),
@@ -72,8 +72,8 @@ public class AppointmentServiceImpl implements AppointmentService {
         );
         if (isSlotTaken)
             throw new BusinessException("That slot is already taken");
-        Personal doctor = personalRepository.getReferenceById(request.doctorId());
-        Patient patient = patientRepository.getReferenceById(request.patientId());
+        var doctor = personalRepository.getReferenceById(request.doctorId());
+        var patient = patientRepository.getReferenceById(request.patientId());
         Appointment appointment = Appointment.builder()
                 .doctor(doctor)
                 .patient(patient)
@@ -131,7 +131,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     }
 
     private Map<AppointmentStatus, List<AppointmentSummaryItem>> groupByStatus(List<Appointment> appointments) {
-        Map<AppointmentStatus, List<AppointmentSummaryItem>> board = new EnumMap<>(AppointmentStatus.class);
+        var board = new EnumMap<AppointmentStatus, List<AppointmentSummaryItem>>(AppointmentStatus.class);
         for (AppointmentStatus status : AppointmentStatus.values())
             board.put(status, new ArrayList<>());
         for (Appointment appointment : appointments)
@@ -140,7 +140,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     }
 
     private Map<String, List<AppointmentSummaryItem>> groupByDay(List<Appointment> appointments) {
-        Map<String, List<AppointmentSummaryItem>> calendar = new LinkedHashMap<>();
+        var calendar = new LinkedHashMap<String, List<AppointmentSummaryItem>>();
         for (Appointment appointment : appointments) {
             String key = appointment.getStartTime().toLocalDate().format(CALENDAR_KEY_FORMATTER);
             calendar.computeIfAbsent(key, _ -> new ArrayList<>()).add(toSummaryItem(appointment));

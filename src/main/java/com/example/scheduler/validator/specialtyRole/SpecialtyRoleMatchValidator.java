@@ -21,21 +21,19 @@ public class SpecialtyRoleMatchValidator implements ConstraintValidator<Specialt
 
     @Override
     public boolean isValid(Object value, ConstraintValidatorContext context) {
-        if(value == null)
-            return true;
+        if(value == null) return true;
         try {
             Long roleId = (Long) getFieldValue(value, firstField);
             Long specialtyId = (Long) getFieldValue(value, secondField);
-            if(roleId == null)
-                return true;
+            if(roleId == null) return true;
             boolean isDoctor = roleId.equals(ERole.DOCTOR.getId());
             boolean existsSpecialty = specialtyId != null;
             if (isDoctor && !existsSpecialty) {
-                    context.disableDefaultConstraintViolation();
-                    context.buildConstraintViolationWithTemplate(message)
-                            .addPropertyNode(secondField)
-                            .addConstraintViolation();
-                    return false;
+                context.disableDefaultConstraintViolation();
+                context.buildConstraintViolationWithTemplate(message)
+                        .addPropertyNode(secondField)
+                        .addConstraintViolation();
+                return false;
             }
             return true;
         } catch (Exception e) {

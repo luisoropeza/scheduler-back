@@ -24,9 +24,9 @@ public class TwilioWhatsappServiceImpl implements TwilioWhatsappService {
 
     @Override
     public String sendWhatsAppMessage(String toPhoneNumber, String messageBody) {
-        PhoneNumber to = new PhoneNumber("whatsapp:" + toPhoneNumber);
-        PhoneNumber from = new PhoneNumber(fromWhatsAppNumber);
-        Message message = Message.creator(to, from, messageBody).create();
+        var to = new PhoneNumber("whatsapp:" + toPhoneNumber);
+        var from = new PhoneNumber(fromWhatsAppNumber);
+        var message = Message.creator(to, from, messageBody).create();
         return message.getSid();
     }
 }

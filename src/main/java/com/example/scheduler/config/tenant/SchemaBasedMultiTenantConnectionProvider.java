@@ -17,7 +17,7 @@ public class SchemaBasedMultiTenantConnectionProvider implements MultiTenantConn
 
     @Override
     public Connection getAnyConnection() throws SQLException {
-        Connection connection = dataSource.getConnection();
+        var connection = dataSource.getConnection();
         setSearchPath(connection, "public");
         return connection;
     }
@@ -29,7 +29,7 @@ public class SchemaBasedMultiTenantConnectionProvider implements MultiTenantConn
 
     @Override
     public Connection getConnection(String tenantIdentifier) throws SQLException {
-        Connection connection = dataSource.getConnection();
+        var connection = dataSource.getConnection();
         setSearchPath(connection, tenantIdentifier + ", public");
         return connection;
     }

@@ -8,8 +8,7 @@ public class ValidRoleValidator implements ConstraintValidator<ValidRole, Long> 
 
     @Override
     public boolean isValid(Long value, ConstraintValidatorContext context) {
-        if(value == null)
-            return true;
+        if(value == null) return true;
         return value.equals(ERole.ASSISTANT.getId()) || value.equals(ERole.DOCTOR.getId());
     }
 }
