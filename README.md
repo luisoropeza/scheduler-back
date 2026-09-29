@@ -1,175 +1,519 @@
 # Scheduler
 
-A multi-tenant REST API for a clinic appointment scheduler built with Spring Boot. Each clinic is an isolated tenant: doctors publish available time slots, patients book them, and staff can confirm, cancel, or reschedule appointments.
+A multi-tenant REST API for clinical appointment scheduling built with Spring Boot 4 and Java 26. The platform supports 
+multiple clinics isolated through **PostgreSQL schema-based multi-tenancy**, dynamic weekly doctor availability management 
+with exception handling, patient booking workflows, role-based access control with JWT, and an AI-powered conversational 
+assistant with tool calling powered by Spring AI and Google Gemini.
 
-## Tech stack
+---
 
-- Java 26, Spring Boot 4
-- Spring Data JPA + PostgreSQL, with Hibernate discriminator-based multi-tenancy (`@TenantId`)
-- Spring Security with stateless JWT authentication
-- MapStruct (entity ↔ DTO mapping) + Lombok
-- springdoc-openapi (Swagger UI)
-- Gradle
+## Table of Contents
+
+- [Tech Stack](#tech-stack)
+- [System Architecture & Multi-Tenancy](#system-architecture--multi-tenancy)
+  - [Schema-per-Tenant Model](#schema-per-tenant-model)
+  - [Dynamic Tenant Provisioning](#dynamic-tenant-provisioning)
+  - [Context Resolution & Security](#context-resolution--security)
+- [Domain Model & Roles](#domain-model--roles)
+  - [User Roles](#user-roles)
+  - [Entity Model](#entity-model)
+  - [Custom Validations](#custom-validations)
+  - [Weekly Recurring Availability](#weekly-recurring-availability)
+  - [Schedule Exceptions & Blocks](#schedule-exceptions--blocks)
+  - [Dynamic Available Slot Calculation](#dynamic-available-slot-calculation)
+- [AI Virtual Assistant & Integrations](#ai-virtual-assistant--integrations)
+  - [Spring AI Google Gemini Chat](#spring-ai-google-gemini-chat)
+  - [Twilio WhatsApp Notifications](#twilio-whatsapp-notifications)
+- [Prerequisites](#prerequisites)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+  - [Local Execution](#local-execution)
+  - [Docker Execution](#docker-execution)
+  - [Initial Data Seeding](#initial-data-seeding)
+- [API Reference](#api-reference)
+  - [Clinics (`/api/clinics`)](#clinics-apiclinics)
+  - [Authentication (`/api/auth`)](#authentication-apiauth)
+  - [Staff / Personal (`/api/personal`)](#staff--personal-apipersonal)
+  - [Patients (`/api/patients`)](#patients-apipatients)
+  - [Doctor Availability (`/api/doctorAvailability`)](#doctor-availability-apidoctoravailability)
+  - [Schedule Exceptions (`/api/scheduleException`)](#schedule-exceptions-apischeduleexception)
+  - [Appointments (`/api/appointments`)](#appointments-apiappointments)
+  - [Specialties (`/api/specialties`)](#specialties-apispecialties)
+  - [Roles (`/api/roles`)](#roles-apiroles)
+  - [Accounts (`/api/account`)](#accounts-apiaccount)
+  - [AI Chat Assistant (`/api/chat`)](#ai-chat-assistant-apichat)
+- [Testing](#testing)
+
+---
+
+## Tech Stack
+
+- **Language & Runtime:** Java 26 (Eclipse Temurin toolchain)
+- **Framework:** Spring Boot 4.0.7
+- **Persistence & ORM:** Spring Data JPA, Hibernate with Schema-based Multi-tenancy (`multiTenancy: SCHEMA`)
+- **Database:** PostgreSQL (with automated schema provisioning)
+- **Security:** Spring Security with stateless JWT (`jjwt 0.12.6`), Bcrypt password hashing, and method-level security (`@PreAuthorize`)
+- **Artificial Intelligence:** Spring AI 2.0.1 (`spring-ai-starter-model-google-genai` with `gemini-3.5-flash-lite`)
+- **Messaging:** Twilio Java SDK 13.0.1 (WhatsApp messaging service)
+- **Email:** Spring Boot Starter Mail (SMTP)
+- **Mapping & Boilerplate:** MapStruct 1.6.3 and Project Lombok
+- **API Documentation:** SpringDoc OpenAPI 3.0.2 (Swagger UI)
+- **Build Tool:** Gradle
+
+---
+
+## System Architecture & Multi-Tenancy
+
+### Schema-per-Tenant Model
+
+The application isolates tenant data using a **PostgreSQL schema-per-tenant** pattern:
+
+- **`public` schema (Shared):** Contains system-wide data shared across all tenants:
+  - `clinics` — registered clinics/tenants.
+  - `accounts` — user identities (`ci`, `name`, `email`, `password`, `phone_number`).
+  - `roles` — predefined system roles (`ADMINISTRATOR`, `DOCTOR`, `ASSISTANT`, `PATIENT`).
+- **`clinic_{id}` schemas (Tenant Isolated):** Dedicated schema automatically provisioned per clinic:
+  - `specialties` — medical specialties offered by the clinic.
+  - `personal` — clinic staff members linked to shared accounts, roles, and specialties.
+  - `patients` — clinic patients linked to shared accounts and roles.
+  - `doctor_availabilities` — recurring weekly working schedules for doctors.
+  - `schedule_exceptions` — date-specific blocks or time-range exceptions for doctors.
+  - `appointments` — patient appointment bookings with optimistic locking (`version`).
+  - `doctor_patient` — many-to-many relationship tracking doctor-patient assignments.
+
+### Dynamic Tenant Provisioning
+
+1. At startup, `SchemaProvisioningService` initializes the `public` schema (`sql/public-schema.sql`), ensuring `accounts`, `roles`, and `clinics` tables exist, and seeds standard roles.
+2. When a new clinic is registered (`POST /api/clinics`), `SchemaProvisioningService` dynamically generates the schema `clinic_{id}` and executes `sql/tenant-schema.sql`, initializing all tenant-specific tables and setting up default reference data.
+
+### Context Resolution & Security
+
+- **No manual `X-Tenant-ID` header is required.**
+- During login (`POST /api/auth/login`), the client sends `{ "clinicId": 1, "email": "...", "password": "..." }`. The system switches `TenantContext` to `clinic_1`, validates the user credentials within that tenant, and issues a JWT token embedding `id`, `role`, `clinicId`, and `name`.
+- On all authenticated requests, `JwtAuthFilter` extracts the `clinicId` claim from the validated JWT token and sets `TenantContext.setCurrentTenant("clinic_" + clinicId)`.
+- Hibernate's `SchemaBasedMultiTenantConnectionProvider` automatically sets the PostgreSQL connection search path to `clinic_{clinicId}, public`, seamlessly isolating every database query.
+
+---
+
+## Domain Model & Roles
+
+### User Roles
+
+The system defines 4 strict roles (`ERole`):
+
+| Role            | Role ID | Scope & Permissions                                                                                                                                                                                       |
+|-----------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ADMINISTRATOR` | 1       | Clinic administrator. Can register/manage staff members (`personal`), deactivate staff, and create medical specialties.                                                                                   |
+| `DOCTOR`        | 2       | Medical doctor. Manages recurring availability (`DoctorAvailability`), sets schedule blocks/exceptions (`ScheduleException`), views own appointments and patient list, and confirms/cancels appointments. |
+| `ASSISTANT`     | 3       | Clinic receptionist / assistant. Registers patients, updates patient info, assigns/removes patients to doctors, views doctor schedules, and confirms/cancels appointments.                                |
+| `PATIENT`       | 4       | Registered patient. Checks doctor available time slots, books appointments, updates self profile, and interacts with the AI scheduling assistant.                                                         |
+
+### Entity Model
+
+- **`Clinic`** — A tenant entity containing clinic name and contact phone number.
+- **`Account`** — Global credential record storing `ci` (national ID), `name`, `email`, `password` (Bcrypt encoded), and optional `phoneNumber`.
+- **`Role`** — Global role definition (`ADMINISTRATOR`, `DOCTOR`, `ASSISTANT`, `PATIENT`).
+- **`Personal`** — Tenant entity linking an `Account` to a clinic staff member, with assigned `Role`, optional `Specialty`, and assigned patients.
+- **`Patient`** — Tenant entity linking an `Account` to a clinic patient record.
+- **`DoctorAvailability`** — Recurring weekly availability window for a doctor (`dayOfWeek`, `startTime`, `endTime`, `slotDurationMinutes`, `active`).
+- **`ScheduleException`** — Schedule exception or block on a doctor's schedule (`date`, `startTime`, `endTime`, `isFullDayBlock`, `reason`).
+- **`Appointment`** — Scheduled appointment linking a doctor and a patient for a specific time interval (`startTime`, `endTime`), with `status` (`PENDING`, `CONFIRMED`, `CANCELLED`) and optimistic locking versioning (`version`).
+- **`Specialty`** — Clinic medical specialty (e.g., General Medicine, Dentistry, Pediatrics).
+
+### Custom Validations
+
+The application uses custom Jakarta Bean Validation annotations:
+
+- **`@ValidRole`**: Ensures that staff registrations specify a valid staff role ID (`DOCTOR` or `ASSISTANT`).
+- **`@SpecialtyRoleMatch`**: Cross-field validator ensuring that:
+  - If the role is `DOCTOR`, a valid `specialtyId` must be provided.
+  - If the role is `ASSISTANT`, `specialtyId` must be null.
+
+### Weekly Recurring Availability
+
+Doctors define recurring weekly time slots (`/api/doctorAvailability`):
+- `dayOfWeek`: Day of the week (`MONDAY` through `SUNDAY`).
+- `startTime`: Shift start time (e.g., `08:00:00`).
+- `endTime`: Shift end time (e.g., `12:00:00`).
+- `slotDurationMinutes`: Consultation interval in minutes (e.g., `30`).
+
+### Schedule Exceptions & Blocks
+
+Doctors can register exceptions (`/api/scheduleException`) for holidays, medical leaves, or specific unavailable intervals:
+- `isFullDayBlock`: When `true`, completely marks the specified date as unavailable.
+- `startTime` & `endTime`: Defines a partial time range block for that date.
+- `reason`: Description of the unavailability (e.g., "Medical Conference", "Surgery").
+
+### Dynamic Available Slot Calculation
+
+When querying `GET /api/doctorAvailability/{doctorId}/availables?date=YYYY-MM-DD`:
+1. Checks if the date has a full-day block exception (`isFullDayBlock = true`). If so, returns an empty list.
+2. Loads doctor's active weekly availability windows for that `DayOfWeek`.
+3. Slices the availability window into discrete slot start times based on `slotDurationMinutes`.
+4. Discards slots that fall within any partial schedule exceptions.
+5. Queries `appointments` for that doctor and date where `status != CANCELLED`, and removes slots already occupied.
+6. Returns the remaining available slots.
+
+When booking (`POST /api/appointments`), the backend validates that the requested slot fits within the doctor's working hours, is not blocked by exceptions, and is not already taken, rejecting invalid requests with a `400 Bad Request`.
+
+---
+
+## AI Virtual Assistant & Integrations
+
+### Spring AI Google Gemini Chat
+
+The `/api/chat/patient` endpoint provides an interactive AI assistant for patients powered by **Spring AI** and Google's **Gemini 3.5 Flash Lite** model:
+
+- **Conversational Memory:** Preserves multi-turn conversation context keyed by `userId:sessionId`.
+- **Function / Tool Calling (`FlowScheduleTool`):** The LLM autonomously accesses backend tools to assist the patient:
+  - `getPatientUser`: Fetches the current authenticated patient's profile.
+  - `findAllSpecialties`: Retrieves available specialties in the clinic.
+  - `findAllDoctors`: Retrieves active doctors for a selected specialty.
+
+### Twilio WhatsApp Notifications
+
+Integrated with the **Twilio SDK** (`TwilioWhatsappService`):
+- Supports automated WhatsApp notification delivery (e.g., appointment confirmations, reminders) directly to patients' phone numbers.
+
+---
 
 ## Prerequisites
 
-- JDK 26 (a Gradle toolchain will provision it automatically if not present)
-- A running PostgreSQL instance
+- **JDK 26** (Gradle toolchain will provision it automatically if needed)
+- **PostgreSQL 14+** running and accessible
+- **Google Gemini API Key** (for Spring AI chat features)
+
+---
 
 ## Configuration
 
-All configuration lives in `src/main/resources/application.yaml` and is overridable via environment variables:
+Configuration is managed in `src/main/resources/application.yaml` and loaded via environment variables or a `.env` file:
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `DB_URL` | `jdbc:postgresql://localhost:5432/scheduler` | Database URL |
-| `DB_USERNAME` | `postgres` | Database user |
-| `DB_PASSWORD` | `mysecretpassword` | Database password |
-| `CORS_ALLOWED_ORIGINS` | `*` | Allowed CORS origins |
-| `JWT_SECRET` | `change-me-in-production-minimum-32-chars!` | JWT signing secret (HMAC, must be ≥32 chars) |
-| `N8N_API_KEY` | `change-me-n8n-key` | Static API key for the `/api/integrations/n8n/**` facade (sent as `X-API-Key`) |
-| `MAIL_HOST` | `smtp.gmail.com` | SMTP host |
-| `MAIL_PORT` | `587` | SMTP port |
-| `MAIL_USERNAME` | *(empty)* | SMTP username |
-| `MAIL_PASSWORD` | *(empty)* | SMTP password |
-| `MAIL_FROM` | `no-reply@scheduler.local` | From address for outgoing mail |
-| `MAIL_FROM_NAME` | `Scheduler` | From display name for outgoing mail |
+| Variable               | Default / Example                            | Description                                        |
+|------------------------|----------------------------------------------|----------------------------------------------------|
+| `DB_URL`               | `jdbc:postgresql://localhost:5432/scheduler` | PostgreSQL JDBC connection URL                     |
+| `DB_USERNAME`          | `postgres`                                   | PostgreSQL username                                |
+| `DB_PASSWORD`          | `mysecretpassword`                           | PostgreSQL password                                |
+| `PORT`                 | `8080`                                       | HTTP server port                                   |
+| `CORS_ALLOWED_ORIGINS` | `*`                                          | Allowed CORS origins (comma-separated or wildcard) |
+| `JWT_SECRET`           | *(minimum 32 characters)*                    | HMAC signing key for JWT tokens                    |
+| `GEMINI_API_KEY`       | *(your Gemini API key)*                      | Google GenAI API key for Spring AI chat assistant  |
+| `MAIL_HOST`            | `smtp.gmail.com`                             | SMTP server host                                   |
+| `MAIL_PORT`            | `587`                                        | SMTP server port                                   |
+| `MAIL_USERNAME`        | *(empty)*                                    | SMTP username                                      |
+| `MAIL_PASSWORD`        | *(empty)*                                    | SMTP password / app password                       |
+| `MAIL_FROM`            | `no-reply@scheduler.local`                   | Sender email address                               |
+| `MAIL_FROM_NAME`       | `Scheduler`                                  | Sender display name                                |
 
-The defaults are for local development only — set real values for anything beyond that.
+Twilio properties are configured under the `twilio` prefix in `application.yaml`:
+```yaml
+twilio:
+  account-sid: ${TWILIO_ACCOUNT_SID:TU_ACCOUNT_SID}
+  auth-token: ${TWILIO_AUTH_TOKEN:TU_AUTH_TOKEN}
+  whatsapp-number: ${TWILIO_WHATSAPP_NUMBER:whatsapp:+14155238886}
+```
 
-## Running
+---
+
+## Running the Application
+
+### Local Execution
+
+Ensure PostgreSQL is running and a database named `scheduler` exists:
 
 ```bash
-# Windows
-gradlew.bat bootRun
+# Windows (PowerShell / Command Prompt)
+.\gradlew.bat bootRun
 
-# macOS/Linux
+# Linux / macOS
 ./gradlew bootRun
 ```
 
-Or with Docker:
+### Docker Execution
+
+Build and run using the provided multi-stage `Dockerfile`:
 
 ```bash
+# Build the Docker image
 docker build -t scheduler .
+
+# Run with environment variables from .env
 docker run --env-file .env -p 8080:8080 scheduler
 ```
 
-The app starts on `http://localhost:8080`. `spring.jpa.hibernate.ddl-auto` is set to `update`, so the schema is created/updated automatically against the configured database — no separate migration step is needed.
+### Initial Data Seeding
 
-On first startup (only when the `clinic` table is empty), `DataSeeder` seeds two clinics, each with its own admin account, 3 specialties, 3 doctors, 1 receptionist, patients, and schedule slots. Every seeded user's password is `password123`.
+On first startup (when `public.clinics` is empty), `DataSeeder` automatically creates two sample clinics with complete test data:
 
-## Multi-tenancy
+1. **Downtown Clinic** (Phone: `+1-555-2001`)
+   - Schema: `clinic_1`
+   - Admin: `admin.downtown@clinic.com` (CI: `123123121`)
+   - Doctors: Dr. Ana García (`ana.garcia@clinic.com`, General Medicine), Dr. Carlos Méndez (`carlos.mendez@clinic.com`, Dentistry), Dr. Laura Torres (`laura.torres@clinic.com`, Pediatrics)
+   - Assistant: Maria Ramos (`maria.ramos@clinic.com`)
+   - Patients: John Smith (`john.smith@email.com`), María López (`maria.lopez@email.com`)
+2. **Uptown Clinic** (Phone: `+1-555-2002`)
+   - Schema: `clinic_2`
+   - Admin: `admin.uptown@clinic.com` (CI: `123123128`)
+   - Doctors: Dr. Sofía Ramírez (`sofia.ramirez@clinic.com`, Cardiology), Dr. Diego Fernández (`diego.fernandez@clinic.com`, Dermatology), Dr. Valentina Cruz (`valentina.cruz@clinic.com`, Traumatology)
+   - Assistant: Pedro Álvarez (`pedro.alvarez@clinic.com`)
+   - Patient: James Wilson (`james.wilson@email.com`)
 
-Every clinic (`Clinic`) is a tenant. Tenant-scoped entities (`Specialty`, `Personal`, `Patient`, `DoctorAvailability`, `Appointment`) carry a `clinicId` column and are automatically filtered by it on every query via Hibernate's discriminator-based multi-tenancy. `Role` and `Clinic` itself are shared across all tenants.
+> [!NOTE]
+> Every seeded user account has the password: `password123`.
 
-**Every request to a non-public endpoint must include an `X-Tenant-ID` header** set to the numeric clinic id — requests without it are rejected with `400 Bad Request` before authentication is even checked. If the request also carries a JWT, the header's clinic id must match the `clinicId` claim embedded in the token at login/registration time, or the request is rejected with `403 Forbidden`.
+---
 
-Create a clinic first (no auth or tenant header required) — this also creates its admin account. Log in as that admin (sending `X-Tenant-ID: <clinicId>`) and use their JWT to register staff and patients against the clinic; each new account's `clinicId` is stamped from the `X-Tenant-ID` header on the registration call.
+## API Reference
 
-## API
-
-Interactive API docs (Swagger UI) are available at `http://localhost:8080/swagger-ui/index.html` once the app is running, backed by the OpenAPI spec at `/v3/api-docs`. Remember to set `X-Tenant-ID` when trying endpoints out.
-
-Authentication is JWT-based: log in via `/api/auth/**` to get a token, then send it as `Authorization: Bearer <token>` on subsequent requests. There's no self-service sign-up — accounts are created by a clinic's admin (creating a clinic) or by existing staff (registering patients/staff). Endpoints are grouped below by resource; roles are `ADMINISTRATOR`, `DOCTOR`, `SUPERVISOR`, `RECEPTIONIST`, `PATIENT`.
+Interactive Swagger documentation is available once the server starts at:
+```
+http://localhost:8080/swagger-ui/index.html
+```
+OpenAPI JSON spec is available at:
+```
+http://localhost:8080/v3/api-docs
+```
 
 ### Clinics (`/api/clinics`)
 
-| Method | Path | Access | Description |
-|---|---|---|---|
-| GET | `/api/clinics` | public | List all clinics |
-| POST | `/api/clinics` | public | Create a new clinic (tenant) and its admin account (`adminName`/`adminEmail`/`adminPassword`) |
-| GET | `/api/clinics/mine` | any authenticated user | List the clinics the caller belongs to |
+| Method | Endpoint       | Access | Description                                                                                        |
+|--------|----------------|--------|----------------------------------------------------------------------------------------------------|
+| `GET`  | `/api/clinics` | Public | List all registered clinics                                                                        |
+| `POST` | `/api/clinics` | Public | Register a new clinic and its administrator account; automatically provisions `clinic_{id}` schema |
 
-### Auth (`/api/auth`)
+**Payload for `POST /api/clinics`:**
+```json
+{
+  "name": "St. Jude Clinic",
+  "phoneNumber": "+1-555-0199",
+  "adminName": "Alice Johnson",
+  "adminEmail": "admin.stjude@clinic.com",
+  "adminPassword": "password123",
+  "adminCi": "987654321"
+}
+```
 
-| Method | Path | Access | Description |
-|---|---|---|---|
-| POST | `/api/auth/patient/register` | ADMINISTRATOR, DOCTOR, RECEPTIONIST | Register a new patient |
-| POST | `/api/auth/patient/login` | public | Log in as a patient, returns a JWT |
-| POST | `/api/auth/personal/register` | ADMINISTRATOR | Register a new staff member |
-| POST | `/api/auth/personal/login` | public | Log in as staff, returns a JWT |
+---
 
-### Schedules (`/api/schedules`, `/api/personal/{doctorId}/schedules`)
+### Authentication (`/api/auth`)
 
-| Method | Path | Access | Description |
-|---|---|---|---|
-| GET | `/api/schedules` | any authenticated user | Browse slots; filter by `doctorId`, `specialtyId`, `status`, `after` |
-| GET | `/api/schedules/{id}` | any authenticated user | Get a slot by ID |
-| POST | `/api/personal/{doctorId}/schedules` | DOCTOR | Create one available slot |
-| POST | `/api/personal/{doctorId}/schedules/batch` | DOCTOR | Create multiple slots at once |
-| DELETE | `/api/personal/{doctorId}/schedules/{scheduleId}` | DOCTOR | Remove an available slot |
+| Method | Endpoint          | Access | Description                                                       |
+|--------|-------------------|--------|-------------------------------------------------------------------|
+| `POST` | `/api/auth/login` | Public | Unified user login (staff or patient). Returns a JWT Bearer token |
 
-### Appointments (`/api/appointments`)
+**Payload for `POST /api/auth/login`:**
+```json
+{
+  "clinicId": 1,
+  "email": "ana.garcia@clinic.com",
+  "password": "password123"
+}
+```
 
-| Method | Path | Access | Description |
-|---|---|---|---|
-| POST | `/api/appointments` | any authenticated user | Book a slot for a patient |
-| GET | `/api/appointments/{id}` | any authenticated user | Get appointment details |
-| GET | `/api/appointments` | any authenticated user | Paged list, filter by `?doctorId=&clientId=&status=` (all optional; DOCTOR/PATIENT callers are scoped to themselves, RECEPTIONIST can filter freely or omit both for a clinic-wide list) |
-| GET | `/api/appointments/board` | any authenticated user | Appointments in `?from=&to=` grouped by status (also filterable by `doctorId`/`clientId`, same scoping rules) |
-| GET | `/api/appointments/calendar` | any authenticated user | Appointments in `?month=&year=` grouped by day (also filterable by `doctorId`/`clientId`, same scoping rules) |
-| PATCH | `/api/appointments/{id}/confirm` | DOCTOR, RECEPTIONIST | Confirm a pending appointment |
-| PATCH | `/api/appointments/{id}/cancel` | DOCTOR, RECEPTIONIST | Cancel an appointment (frees the slot) |
-| PATCH | `/api/appointments/{id}/reschedule` | DOCTOR, RECEPTIONIST | Move an appointment to a new slot |
+**Response:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+---
+
+### Staff / Personal (`/api/personal`)
+
+| Method   | Endpoint                            | Access                       | Description                                                                             |
+|----------|-------------------------------------|------------------------------|-----------------------------------------------------------------------------------------|
+| `GET`    | `/api/personal/doctors`             | `PATIENT`, `ASSISTANT`       | List doctors, optional filters: `?specialtyId=&isActive=` (paginated)                   |
+| `GET`    | `/api/personal`                     | `ADMINISTRATOR`              | List all staff members, optional filters: `?specialtyId=&isActive=&roleId=` (paginated) |
+| `POST`   | `/api/personal`                     | `ADMINISTRATOR`              | Register a new staff member (`DOCTOR` or `ASSISTANT`)                                   |
+| `GET`    | `/api/personal/{personalId}`        | `ADMINISTRATOR`, `ASSISTANT` | Get staff details by ID                                                                 |
+| `PUT`    | `/api/personal/update/{personalId}` | `ADMINISTRATOR`              | Update staff member info by ID                                                          |
+| `PUT`    | `/api/personal/update`              | `DOCTOR`, `ASSISTANT`        | Update authenticated staff member's own profile                                         |
+| `DELETE` | `/api/personal/{personalId}`        | `ADMINISTRATOR`              | Deactivate staff member                                                                 |
+| `POST`   | `/api/personal/patients/assign`     | `DOCTOR`, `ASSISTANT`        | Assign a patient to a doctor (`{ "patientId": 1, "doctorId": 2 }`)                      |
+| `DELETE` | `/api/personal/patients/remove`     | `DOCTOR`, `ASSISTANT`        | Remove a patient from a doctor (`{ "patientId": 1, "doctorId": 2 }`)                    |
+| `GET`    | `/api/personal/{doctorId}/patients` | `DOCTOR`, `ASSISTANT`        | List all patients assigned to a doctor                                                  |
+
+**Payload for `POST /api/personal`:**
+```json
+{
+  "name": "Dr. Gregory House",
+  "email": "house@clinic.com",
+  "ci": "112233445",
+  "password": "password123",
+  "roleId": 2,
+  "specialtyId": 1
+}
+```
+
+---
 
 ### Patients (`/api/patients`)
 
-| Method | Path | Access | Description |
-|---|---|---|---|
-| GET | `/api/patients` | DOCTOR, RECEPTIONIST | List all patients |
-| GET | `/api/patients/{id}` | DOCTOR, RECEPTIONIST | Get a patient by ID |
-| PUT | `/api/patients/{id}` | any authenticated user | Update patient info |
-| DELETE | `/api/patients/{id}` | any authenticated user | Deactivate a patient account |
-| GET | `/api/patients/{patientId}/doctors` | DOCTOR, RECEPTIONIST | List doctors assigned to a patient |
+| Method   | Endpoint                            | Access                 | Description                                    |
+|----------|-------------------------------------|------------------------|------------------------------------------------|
+| `GET`    | `/api/patients`                     | `DOCTOR`, `ASSISTANT`  | List all patients (paginated)                  |
+| `POST`   | `/api/patients`                     | `DOCTOR`, `ASSISTANT`  | Register a new patient account                 |
+| `GET`    | `/api/patients/{patientId}`         | `DOCTOR`, `ASSISTANT`  | Get patient details by ID                      |
+| `PUT`    | `/api/patients/update/{patientId}`  | `DOCTOR`, `ASSISTANT`  | Update patient details by ID                   |
+| `PUT`    | `/api/patients/update`              | `PATIENT`              | Update authenticated patient's own profile     |
+| `DELETE` | `/api/patients/{patientId}`         | `DOCTOR`, `ASSISTANT`  | Deactivate a patient account                   |
+| `GET`    | `/api/patients/{patientId}/doctors` | `PATIENT`, `ASSISTANT` | List doctors assigned to the specified patient |
 
-### Personal / staff (`/api/personal`)
+**Payload for `POST /api/patients`:**
+```json
+{
+  "name": "Carlos Mendoza",
+  "email": "carlos.mendoza@email.com",
+  "ci": "554433221",
+  "password": "password123",
+  "phoneNumber": "+1-555-4001"
+}
+```
 
-| Method | Path | Access | Description |
-|---|---|---|---|
-| GET | `/api/personal` | any authenticated user | List staff; filter by `specialtyId`, `isActive` |
-| GET | `/api/personal/{id}` | DOCTOR, RECEPTIONIST | Get a staff member by ID |
-| PUT | `/api/personal/{id}` | DOCTOR, RECEPTIONIST | Update a staff member |
-| DELETE | `/api/personal/{id}` | DOCTOR, RECEPTIONIST | Deactivate a staff member |
-| POST | `/api/personal/{doctorId}/patients/{patientId}` | DOCTOR, RECEPTIONIST | Assign a patient to a doctor |
-| DELETE | `/api/personal/{doctorId}/patients/{patientId}` | DOCTOR, RECEPTIONIST | Unassign a patient from a doctor |
-| GET | `/api/personal/{doctorId}/patients` | DOCTOR, RECEPTIONIST | List a doctor's patients |
+---
 
-### Reference data
+### Doctor Availability (`/api/doctorAvailability`)
 
-| Method | Path | Access | Description |
-|---|---|---|---|
-| GET | `/api/roles` | DOCTOR, RECEPTIONIST | List available staff roles |
-| GET | `/api/specialties` | any authenticated user | List available specialties |
-| POST | `/api/specialties` | ADMINISTRATOR | Create a specialty |
+| Method | Endpoint                                        | Access                           | Description                                                                        |
+|--------|-------------------------------------------------|----------------------------------|------------------------------------------------------------------------------------|
+| `POST` | `/api/doctorAvailability`                       | `DOCTOR`                         | Configure recurring weekly working availability for authenticated doctor           |
+| `GET`  | `/api/doctorAvailability/{doctorId}`            | `DOCTOR`, `ASSISTANT`, `PATIENT` | Get all recurring working schedules for a doctor                                   |
+| `GET`  | `/api/doctorAvailability/{doctorId}/availables` | `DOCTOR`, `ASSISTANT`, `PATIENT` | Calculate and return available time slots for a specific date (`?date=YYYY-MM-DD`) |
 
-### Integrations (`/api/integrations/n8n`)
+**Payload for `POST /api/doctorAvailability`:**
+```json
+{
+  "dayOfWeek": "MONDAY",
+  "startTime": "08:00:00",
+  "endTime": "14:00:00",
+  "slotDurationMinutes": 30
+}
+```
 
-Read-only browsing + booking facade for automated callers (currently the n8n WhatsApp workflow). Authenticated via a static API key (`X-API-Key` header, see `N8N_API_KEY`) instead of a per-patient JWT, since the caller only knows the patient's phone number. `X-Tenant-ID` is still required, same as any other endpoint.
+**Response for `GET /api/doctorAvailability/2/availables?date=2026-10-05`:**
+```json
+{
+  "date": "2026-10-05",
+  "doctorId": 2,
+  "availableSlots": [
+    "08:00:00",
+    "08:30:00",
+    "09:00:00",
+    "10:00:00",
+    "10:30:00",
+    "11:00:00"
+  ]
+}
+```
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/integrations/n8n/clinics` | List the clinics a patient (by `phoneNumber`) belongs to |
-| GET | `/api/integrations/n8n/specialties` | List all specialties |
-| GET | `/api/integrations/n8n/doctors` | List active doctors; filter by `specialtyId` |
-| GET | `/api/integrations/n8n/schedules` | List available slots; filter by `doctorId` |
-| GET | `/api/integrations/n8n/patients/lookup` | Find a registered patient by `phoneNumber` |
-| POST | `/api/integrations/n8n/appointments` | Book a slot for the patient identified by phone number |
+---
 
-## Domain model
+### Schedule Exceptions (`/api/scheduleException`)
 
-- **Clinic** — a tenant; owns its own specialties, staff, patients, schedules, and appointments.
-- **Account** — shared login record (name, email, password, role) referenced by both `Personal` and `Patient`; `Patient` accounts also carry a `phoneNumber`.
-- **Schedule** — a doctor's bookable time slot; status is `AVAILABLE` or `BOOKED`.
-- **Appointment** — links a patient to a booked schedule; status is `PENDING`, `CONFIRMED`, or `CANCELLED`, tracked independently of the schedule's own status. Booking, confirming, cancelling, and rescheduling keep both statuses in sync (cancelling or rescheduling frees the old slot back to `AVAILABLE`).
-- **Personal** — staff member (`ADMINISTRATOR`, `DOCTOR`, `SUPERVISOR`, or `RECEPTIONIST`) with, for doctors, a specialty and an assigned list of patients.
-- **Patient** — a clinic patient, optionally assigned to one or more doctors.
+| Method | Endpoint                 | Access   | Description                                                            |
+|--------|--------------------------|----------|------------------------------------------------------------------------|
+| `POST` | `/api/scheduleException` | `DOCTOR` | Add a full-day block or time-window exception for authenticated doctor |
+
+**Payload for `POST /api/scheduleException` (Full-day block):**
+```json
+{
+  "date": "2026-10-12",
+  "isFullDayBlock": true,
+  "reason": "National Holiday"
+}
+```
+
+**Payload for `POST /api/scheduleException` (Partial-day block):**
+```json
+{
+  "date": "2026-10-05",
+  "startTime": "09:30:00",
+  "endTime": "10:00:00",
+  "isFullDayBlock": false,
+  "reason": "Department Staff Meeting"
+}
+```
+
+---
+
+### Appointments (`/api/appointments`)
+
+| Method  | Endpoint                                    | Access                | Description                                                                                 |
+|---------|---------------------------------------------|-----------------------|---------------------------------------------------------------------------------------------|
+| `POST`  | `/api/appointments`                         | Any Authenticated     | Book an appointment for a patient                                                           |
+| `GET`   | `/api/appointments/{appointmentId}`         | Any Authenticated     | Get appointment details (scoped to own role)                                                |
+| `GET`   | `/api/appointments`                         | Any Authenticated     | List appointments with filters: `?doctorId=&patientId=&status=` (paginated, scoped by role) |
+| `PATCH` | `/api/appointments/{appointmentId}/confirm` | `DOCTOR`, `ASSISTANT` | Confirm a pending appointment                                                               |
+| `PATCH` | `/api/appointments/{appointmentId}/cancel`  | `DOCTOR`, `ASSISTANT` | Cancel an appointment (frees the slot)                                                      |
+| `GET`   | `/api/appointments/board`                   | Any Authenticated     | Group appointments by status in date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)               |
+| `GET`   | `/api/appointments/calendar`                | Any Authenticated     | Group appointments by day in specified month (`?month=10&year=2026`)                        |
+
+**Payload for `POST /api/appointments`:**
+```json
+{
+  "doctorId": 2,
+  "patientId": 1,
+  "startTime": "2026-10-05T08:30:00",
+  "endTime": "2026-10-05T09:00:00"
+}
+```
+
+---
+
+### Specialties (`/api/specialties`)
+
+| Method | Endpoint           | Access            | Description                                        |
+|--------|--------------------|-------------------|----------------------------------------------------|
+| `GET`  | `/api/specialties` | Any Authenticated | List all medical specialties in the current clinic |
+| `POST` | `/api/specialties` | `ADMINISTRATOR`   | Create a new specialty in the current clinic       |
+
+**Payload for `POST /api/specialties`:**
+```json
+{
+  "name": "Neurology"
+}
+```
+
+---
+
+### Roles (`/api/roles`)
+
+| Method | Endpoint     | Access                                 | Description                                  |
+|--------|--------------|----------------------------------------|----------------------------------------------|
+| `GET`  | `/api/roles` | `ADMINISTRATOR`, `DOCTOR`, `ASSISTANT` | List all available staff roles in the system |
+
+---
+
+### Accounts (`/api/account`)
+
+| Method | Endpoint            | Access            | Description                                             |
+|--------|---------------------|-------------------|---------------------------------------------------------|
+| `GET`  | `/api/account/{ci}` | Any Authenticated | Retrieve account identity details by national ID (`ci`) |
+
+---
+
+### AI Chat Assistant (`/api/chat`)
+
+| Method | Endpoint            | Access    | Description                                                                    |
+|--------|---------------------|-----------|--------------------------------------------------------------------------------|
+| `POST` | `/api/chat/patient` | `PATIENT` | Conversational scheduling chat with Spring AI agent and automated tool calling |
+
+**Request Body (`text/plain` or string):**
+```text
+"Hi! I need to see a general doctor next Monday. What doctors and times are available?"
+```
+
+---
 
 ## Testing
 
+Execute the test suite using Gradle:
+
 ```bash
 # Windows
-gradlew.bat test
+.\gradlew.bat test
 
-# macOS/Linux
+# Linux / macOS
 ./gradlew test
 ```
