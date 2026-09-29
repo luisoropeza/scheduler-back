@@ -1,5 +1,6 @@
 package com.example.scheduler.middleware;
 
+import com.example.scheduler.config.tenant.TenantContext;
 import com.example.scheduler.security.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -25,19 +26,25 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain)
             throws ServletException, IOException {
-        String header = request.getHeader("Authorization");
-        if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
-            String subject = jwtUtil.extractSubject(token);
-            if (subject != null) {
-                String role = jwtUtil.extractRole(token);
-                List<SimpleGrantedAuthority> authorities = role != null
-                        ? List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                        : List.of();
-                SecurityContextHolder.getContext().setAuthentication(
-                        new UsernamePasswordAuthenticationToken(subject, null, authorities));
+        try {
+            var header = request.getHeader("Authorization");
+            if (header != null && header.startsWith("Bearer ")) {
+                var token = header.substring(7);
+                var subject = jwtUtil.extractSubject(token);
+                if (subject != null) {
+                    var schemaName = "clinic_" + jwtUtil.extractClinicId(token);
+                    TenantContext.setCurrentTenant(schemaName);
+                    var role = jwtUtil.extractRole(token);
+                    List<SimpleGrantedAuthority> authorities = role != null
+                            ? List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                            : List.of();
+                    SecurityContextHolder.getContext().setAuthentication(
+                            new UsernamePasswordAuthenticationToken(subject, null, authorities));
+                }
             }
+            chain.doFilter(request, response);
+        } finally {
+            TenantContext.clear();
         }
-        chain.doFilter(request, response);
     }
 }

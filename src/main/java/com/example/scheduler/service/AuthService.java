@@ -1,13 +1,8 @@
 package com.example.scheduler.service;
 
-import com.example.scheduler.dto.LoginRequest;
-import com.example.scheduler.dto.LoginResponse;
-import com.example.scheduler.dto.PatientRegisterRequest;
-import com.example.scheduler.dto.PersonalRegisterRequest;
+import com.example.scheduler.dto.login.LoginRequest;
+import com.example.scheduler.dto.login.LoginResponse;
 
 public interface AuthService {
-    LoginResponse registerPatient(PatientRegisterRequest request);
-    LoginResponse loginPatient(LoginRequest request);
-    LoginResponse registerPersonal(PersonalRegisterRequest request);
-    LoginResponse loginPersonal(LoginRequest request);
+    LoginResponse login(LoginRequest request);
 }

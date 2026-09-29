@@ -1,8 +1,9 @@
 package com.example.scheduler.controller;
 
-import com.example.scheduler.dto.PatientRequest;
-import com.example.scheduler.dto.PatientResponse;
-import com.example.scheduler.dto.PersonalResponse;
+import com.example.scheduler.dto.patient.PatientRegisterRequest;
+import com.example.scheduler.dto.patient.PatientRequest;
+import com.example.scheduler.dto.patient.PatientResponse;
+import com.example.scheduler.dto.personal.PersonalResponse;
 import com.example.scheduler.service.PatientService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,41 +23,55 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/patients")
 @RequiredArgsConstructor
-@Tag(name = "Patients", description = "Manage patients")
+@Tag(name = "Patients", description = "Patients Controller")
 public class PatientController {
     private final PatientService patientService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPCIONIST')")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
     @Operation(summary = "GET /api/patients — list all patients")
-    public ResponseEntity<Page<PatientResponse>> findAll(
-            @PageableDefault(sort = "id", direction = Sort.Direction.ASC) Pageable pageable
-    ) {
-        return ResponseEntity.ok(patientService.findAll(pageable));
+    public ResponseEntity<Page<PatientResponse>> findAllPatients(@PageableDefault(sort = "id", direction = Sort.Direction.ASC) Pageable pageable) {
+        return ResponseEntity.ok(patientService.findAllPatients(pageable));
     }
 
-    @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPCIONIST')")
-    @Operation(summary = "GET /api/patients/{id} — get a patient by ID")
-    public ResponseEntity<PatientResponse> findById(@PathVariable Long id) {
-        return ResponseEntity.ok(patientService.findById(id));
+    @PostMapping
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
+    @Operation(summary = "POST /api/patients — create a patient user")
+    public ResponseEntity<PatientResponse> createPatient(@Valid @RequestBody PatientRegisterRequest request) {
+        return ResponseEntity.ok(patientService.createPatient(request));
     }
 
-    @PutMapping("/{id}")
-    @Operation(summary = "PUT /api/patients/{id} — update patient information")
-    public ResponseEntity<PatientResponse> update(@PathVariable Long id, @Valid @RequestBody PatientRequest request, Authentication auth) {
-        return ResponseEntity.ok(patientService.update(id, request, Long.parseLong(auth.getName())));
+    @GetMapping("/{patientId}")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
+    @Operation(summary = "GET /api/patients/{patientId} — get a patient by id")
+    public ResponseEntity<PatientResponse> findPatientById(@PathVariable Long patientId) {
+        return ResponseEntity.ok(patientService.findPatientById(patientId));
     }
 
-    @DeleteMapping("/{id}")
-    @Operation(summary = "DELETE /api/patients/{id} — deactivate (soft-delete) a patient account")
-    public ResponseEntity<Void> deactivate(@PathVariable Long id) {
-        patientService.deactivate(id);
+    @PutMapping("/update/{patientId}")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
+    @Operation(summary = "PUT /api/patients/{patientId} — update a patient by id")
+    public ResponseEntity<PatientResponse> updatePatientById(@PathVariable Long patientId, @Valid @RequestBody PatientRequest request) {
+        return ResponseEntity.ok(patientService.updatePatientById(patientId, request));
+    }
+
+    @PutMapping("/update")
+    @PreAuthorize("hasAnyRole('PATIENT')")
+    @Operation(summary = "PUT /api/patients — update self patient information")
+    public ResponseEntity<PatientResponse> updatePatientProfile(@Valid @RequestBody PatientRequest request, Authentication auth) {
+        return ResponseEntity.ok(patientService.updatePatientById(Long.parseLong(auth.getName()), request));
+    }
+
+    @DeleteMapping("/{patientId}")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
+    @Operation(summary = "DELETE /api/patients/{patientId} — deactivate a patient by id")
+    public ResponseEntity<Void> deactivatePatientById(@PathVariable Long patientId) {
+        patientService.deactivatePatientById(patientId);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{patientId}/doctors")
-    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPCIONIST')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'ASSISTANT')")
     @Operation(summary = "GET /api/patients/{patientId}/doctors — list all doctors assigned to a patient")
     public ResponseEntity<List<PersonalResponse>> getDoctors(@PathVariable Long patientId) {
         return ResponseEntity.ok(patientService.getDoctorsOfPatient(patientId));

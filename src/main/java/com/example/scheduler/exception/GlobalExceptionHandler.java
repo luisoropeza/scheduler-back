@@ -3,7 +3,7 @@ package com.example.scheduler.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -26,11 +26,21 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ErrorResponse> handleBadRequest(BadRequestException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                ErrorResponse.builder()
+                        .status(HttpStatus.BAD_REQUEST.value())
+                        .message(ex.getMessage())
+                        .timestamp(LocalDateTime.now())
+                        .build());
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusiness(BusinessException ex) {
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT).body(
+        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).body(
                 ErrorResponse.builder()
-                        .status(HttpStatus.UNPROCESSABLE_CONTENT.value())
+                        .status(HttpStatus.NOT_ACCEPTABLE.value())
                         .message(ex.getMessage())
                         .timestamp(LocalDateTime.now())
                         .build());
@@ -56,13 +66,12 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
-    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    public ResponseEntity<ErrorResponse> handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
-        log.error("Unhandled exception", ex);
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAuthorizationDeniedException(AuthorizationDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
                 ErrorResponse.builder()
-                        .status(HttpStatus.CONFLICT.value())
-                        .message("This schedule slot was just booked by someone else, please choose another")
+                        .status(HttpStatus.FORBIDDEN.value())
+                        .message(ex.getMessage())
                         .timestamp(LocalDateTime.now())
                         .build());
     }

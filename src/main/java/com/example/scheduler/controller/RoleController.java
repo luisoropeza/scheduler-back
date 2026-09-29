@@ -1,6 +1,6 @@
 package com.example.scheduler.controller;
 
-import com.example.scheduler.dto.RoleResponse;
+import com.example.scheduler.dto.role.RoleResponse;
 import com.example.scheduler.service.RoleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -14,14 +14,14 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/roles")
 @RequiredArgsConstructor
-@Tag(name = "Roles", description = "Available staff roles")
+@Tag(name = "Roles", description = "Roles Controller")
 public class RoleController {
     private final RoleService roleService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('DOCTOR', 'RECEPCIONIST')")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT', 'ADMINISTRATOR')")
     @Operation(summary = "GET /api/roles — list all available staff roles")
-    public ResponseEntity<List<RoleResponse>> findAll() {
-        return ResponseEntity.ok(roleService.findAll());
+    public ResponseEntity<List<RoleResponse>> findAllRoles() {
+        return ResponseEntity.ok(roleService.findAllRoles());
     }
 }
