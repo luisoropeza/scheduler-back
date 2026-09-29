@@ -27,14 +27,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain)
             throws ServletException, IOException {
         try {
-            String header = request.getHeader("Authorization");
+            var header = request.getHeader("Authorization");
             if (header != null && header.startsWith("Bearer ")) {
-                String token = header.substring(7);
-                String subject = jwtUtil.extractSubject(token);
+                var token = header.substring(7);
+                var subject = jwtUtil.extractSubject(token);
                 if (subject != null) {
-                    String schemaName = "clinic_" + jwtUtil.extractClinicId(token);
+                    var schemaName = "clinic_" + jwtUtil.extractClinicId(token);
                     TenantContext.setCurrentTenant(schemaName);
-                    String role = jwtUtil.extractRole(token);
+                    var role = jwtUtil.extractRole(token);
                     List<SimpleGrantedAuthority> authorities = role != null
                             ? List.of(new SimpleGrantedAuthority("ROLE_" + role))
                             : List.of();

@@ -57,7 +57,7 @@ public class PatientController {
 
     @PutMapping("/update")
     @PreAuthorize("hasAnyRole('PATIENT')")
-    @Operation(summary = "PUT /api/patients/{id} — update self patient information")
+    @Operation(summary = "PUT /api/patients — update self patient information")
     public ResponseEntity<PatientResponse> updatePatientProfile(@Valid @RequestBody PatientRequest request, Authentication auth) {
         return ResponseEntity.ok(patientService.updatePatientById(Long.parseLong(auth.getName()), request));
     }
@@ -71,7 +71,7 @@ public class PatientController {
     }
 
     @GetMapping("/{patientId}/doctors")
-    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'ASSISTANT')")
     @Operation(summary = "GET /api/patients/{patientId}/doctors — list all doctors assigned to a patient")
     public ResponseEntity<List<PersonalResponse>> getDoctors(@PathVariable Long patientId) {
         return ResponseEntity.ok(patientService.getDoctorsOfPatient(patientId));

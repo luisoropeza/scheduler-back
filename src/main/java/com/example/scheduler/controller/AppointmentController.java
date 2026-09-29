@@ -3,7 +3,6 @@ package com.example.scheduler.controller;
 import com.example.scheduler.dto.appointment.AppointmentRequest;
 import com.example.scheduler.dto.appointment.AppointmentResponse;
 import com.example.scheduler.dto.appointment.AppointmentSummaryItem;
-import com.example.scheduler.dto.schedule.RescheduleRequest;
 import com.example.scheduler.enums.AppointmentStatus;
 import com.example.scheduler.enums.ERole;
 import com.example.scheduler.security.SecurityUtils;
@@ -36,14 +35,12 @@ public class AppointmentController {
 
     @PostMapping
     @Operation(summary = "POST /api/appointments — book an appointment for a patient on a given schedule slot")
-    public ResponseEntity<AppointmentResponse> bookAppointment(@Valid @RequestBody AppointmentRequest request, Authentication auth) {
-        if(SecurityUtils.extractRole(auth).equals(ERole.PATIENT.name()))
-            return ResponseEntity.status(HttpStatus.CREATED).body(appointmentService.bookAppointment(request, Long.parseLong(auth.getName())));
+    public ResponseEntity<AppointmentResponse> bookAppointment(@Valid @RequestBody AppointmentRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(appointmentService.bookAppointment(request));
     }
 
     @GetMapping("/{appointmentId}")
-    @Operation(summary = "GET /api/appointments/{id} — get an appointment details by Id")
+    @Operation(summary = "GET /api/appointments/{id} — get an appointment details by id")
     public ResponseEntity<AppointmentResponse> findAppointmentById(@PathVariable Long appointmentId, Authentication auth) {
         return ResponseEntity.ok(appointmentService.findAppointmentById(appointmentId, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
@@ -84,23 +81,16 @@ public class AppointmentController {
 
     @PatchMapping("/{appointmentId}/confirm")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
-    @Operation(summary = "PATCH /api/appointments/{id}/confirmAppointmentById — confirm a pending appointment")
+    @Operation(summary = "PATCH /api/appointments/{id}/confirm — confirm a pending appointment")
     public ResponseEntity<AppointmentResponse> confirmAppointmentById(@PathVariable Long appointmentId, Authentication auth) {
         return ResponseEntity.ok(appointmentService.confirmAppointmentById(appointmentId, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
 
     @PatchMapping("/{appointmentId}/cancel")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
-    @Operation(summary = "PATCH /api/appointments/{id}/cancelAppointmentById — cancel an appointment, releases the slot back to AVAILABLE")
+    @Operation(summary = "PATCH /api/appointments/{id}/cancel — cancel an appointment, releases the slot back to AVAILABLE")
     public ResponseEntity<AppointmentResponse> cancelAppointmentById(@PathVariable Long appointmentId, Authentication auth) {
         return ResponseEntity.ok(appointmentService.cancelAppointmentById(appointmentId, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
-    }
-
-    @PatchMapping("/{appointmentId}/reschedule")
-    @PreAuthorize("hasAnyRole('DOCTOR', 'ASSISTANT')")
-    @Operation(summary = "PATCH /api/appointments/{id}/rescheduleAppointmentById — move an appointment to a new schedule slot (body: {scheduleId})")
-    public ResponseEntity<AppointmentResponse> rescheduleAppointmentById(@PathVariable Long appointmentId, @RequestBody RescheduleRequest request, Authentication auth) {
-        return ResponseEntity.ok(appointmentService.rescheduleAppointmentById(appointmentId, request, Long.parseLong(auth.getName()), SecurityUtils.extractRole(auth)));
     }
 
     @GetMapping("/board")

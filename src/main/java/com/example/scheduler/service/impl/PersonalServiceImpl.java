@@ -10,7 +10,6 @@ import com.example.scheduler.entity.Personal;
 import com.example.scheduler.entity.Role;
 import com.example.scheduler.entity.Specialty;
 import com.example.scheduler.enums.ERole;
-import com.example.scheduler.enums.ESpecialty;
 import com.example.scheduler.exception.BadRequestException;
 import com.example.scheduler.exception.ForbiddenException;
 import com.example.scheduler.exception.ResourceNotFoundException;
@@ -42,18 +41,15 @@ public class PersonalServiceImpl implements PersonalService {
 
     @Override
     public Page<PersonalResponse> findAllDoctors(Long specialtyId, Boolean isActive, Pageable pageable) {
-        if(specialtyId != null)
-            getSpecialtyOrThrowById(specialtyId);
+        if(specialtyId != null) getSpecialtyOrThrowById(specialtyId);
         return personalRepository.findAllDoctorsByFilters(specialtyId, isActive, pageable)
                 .map(personalMapper::toResponse);
     }
 
     @Override
     public Page<PersonalResponse> findAllPersonal(Long specialtyId, Boolean isActive, Long roleId, Pageable pageable) {
-        if(specialtyId != null)
-            getSpecialtyOrThrowById(specialtyId);
-        if(roleId != null)
-            getRoleOrThrowById(roleId);
+        if(specialtyId != null) getSpecialtyOrThrowById(specialtyId);
+        if(roleId != null) getRoleOrThrowById(roleId);
         return personalRepository.findAllByFilters(specialtyId, isActive, roleId, pageable)
                 .map(personalMapper::toResponse);
     }
@@ -68,17 +64,10 @@ public class PersonalServiceImpl implements PersonalService {
                     return personalMapper.toEntity(request);
                 });
         var role = getRoleOrThrowById(request.roleId());
-        if(!role.getName().equals(ERole.DOCTOR) && !role.getName().equals(ERole.ASSISTANT))
-            throw new ForbiddenException("Role " + role.getName() + " is not allowed to create");
         personal.setRole(role);
         personal.getAccount().setPassword(passwordEncoder.encode(request.password()));
-        if(role.getName().equals(ERole.ASSISTANT)){
-            var specialty = specialtyRepository.getByName(ESpecialty.DEFAULT.getDisplayName());
-            personal.setSpecialty(specialty);
-        } else if(role.getName().equals(ERole.DOCTOR)) {
-            var specialty = getSpecialtyOrThrowById(request.specialtyId());
-            personal.setSpecialty(specialty);
-        }
+        var specialty = getSpecialtyOrThrowById(request.specialtyId());
+        personal.setSpecialty(specialty);
         return personalMapper.toResponse(personalRepository.save(personal));
     }
 
@@ -144,6 +133,9 @@ public class PersonalServiceImpl implements PersonalService {
     }
 
     private Specialty getSpecialtyOrThrowById(Long specialtyId) {
+        if(specialtyId == null){
+            return null;
+        }
         return  specialtyRepository.findById(specialtyId)
                 .orElseThrow(() -> new ResourceNotFoundException("Specialty not found with id: " + specialtyId));
     }

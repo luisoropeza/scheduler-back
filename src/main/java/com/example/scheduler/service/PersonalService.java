@@ -5,6 +5,7 @@ import com.example.scheduler.dto.personal.AssignAndRemoveRequest;
 import com.example.scheduler.dto.personal.PersonalRegisterRequest;
 import com.example.scheduler.dto.personal.PersonalRequest;
 import com.example.scheduler.dto.personal.PersonalResponse;
+import com.example.scheduler.enums.ERole;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 

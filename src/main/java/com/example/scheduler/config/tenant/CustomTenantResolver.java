@@ -9,7 +9,7 @@ public class CustomTenantResolver implements CurrentTenantIdentifierResolver<Str
 
     @Override
     public String resolveCurrentTenantIdentifier() {
-        String tenant = TenantContext.getCurrentTenant();
+        var tenant = TenantContext.getCurrentTenant();
         return (tenant != null && !tenant.isBlank()) ? tenant : DEFAULT_TENANT;
     }
 
