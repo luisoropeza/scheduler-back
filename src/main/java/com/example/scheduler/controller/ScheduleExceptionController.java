@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/scheduleExchedule")
+@RequestMapping("/api/scheduleException")
 @RequiredArgsConstructor
 @Tag(name = "Schedule Exceptions", description = "Schedule Exception Controller")
 public class ScheduleExceptionController {
