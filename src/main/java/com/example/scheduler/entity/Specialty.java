@@ -10,11 +10,12 @@ import lombok.*;
 @Builder
 @EqualsAndHashCode(of = "id")
 @Entity
-@Table(name = "specialties")
+@Table(name = "specialties", uniqueConstraints = @UniqueConstraint(columnNames = {"name"}))
 public class Specialty {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(nullable = false, unique = true)
+
+    @Column(nullable = false)
     private String name;
 }

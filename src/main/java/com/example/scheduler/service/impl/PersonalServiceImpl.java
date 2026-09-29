@@ -1,26 +1,26 @@
 package com.example.scheduler.service.impl;
 
-import com.example.scheduler.dto.PatientResponse;
-import com.example.scheduler.dto.PersonalRequest;
-import com.example.scheduler.dto.PersonalResponse;
+import com.example.scheduler.dto.patient.PatientResponse;
+import com.example.scheduler.dto.personal.AssignAndRemoveRequest;
+import com.example.scheduler.dto.personal.PersonalRegisterRequest;
+import com.example.scheduler.dto.personal.PersonalRequest;
+import com.example.scheduler.dto.personal.PersonalResponse;
 import com.example.scheduler.entity.Patient;
 import com.example.scheduler.entity.Personal;
 import com.example.scheduler.entity.Role;
 import com.example.scheduler.entity.Specialty;
 import com.example.scheduler.enums.ERole;
-import com.example.scheduler.exception.BusinessException;
+import com.example.scheduler.exception.BadRequestException;
 import com.example.scheduler.exception.ForbiddenException;
 import com.example.scheduler.exception.ResourceNotFoundException;
 import com.example.scheduler.mapper.PatientMapper;
 import com.example.scheduler.mapper.PersonalMapper;
-import com.example.scheduler.repository.PatientRepository;
-import com.example.scheduler.repository.PersonalRepository;
-import com.example.scheduler.repository.RoleRepository;
-import com.example.scheduler.repository.SpecialtyRepository;
+import com.example.scheduler.repository.*;
 import com.example.scheduler.service.PersonalService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,54 +34,70 @@ public class PersonalServiceImpl implements PersonalService {
     private final PatientRepository patientRepository;
     private final SpecialtyRepository specialtyRepository;
     private final RoleRepository roleRepository;
+    private final AccountRepository accountRepository;
     private final PersonalMapper personalMapper;
     private final PatientMapper patientMapper;
+    private final BCryptPasswordEncoder passwordEncoder;
 
     @Override
-    public Page<PersonalResponse> findAll(Long specialtyId, Boolean isActive, Pageable pageable) {
-        if (specialtyId != null) specialtyRepository.findById(specialtyId)
-                .orElseThrow(() -> new ResourceNotFoundException("Specialty not found: " + specialtyId));
-        return personalRepository.findAllByFilters(specialtyId, isActive, pageable)
+    public Page<PersonalResponse> findAllDoctors(Long specialtyId, Boolean isActive, Pageable pageable) {
+        if(specialtyId != null) getSpecialtyOrThrowById(specialtyId);
+        return personalRepository.findAllDoctorsByFilters(specialtyId, isActive, pageable)
                 .map(personalMapper::toResponse);
     }
 
     @Override
-    public PersonalResponse findById(Long id) {
-        return personalMapper.toResponse(getOrThrow(id));
+    public Page<PersonalResponse> findAllPersonal(Long specialtyId, Boolean isActive, Long roleId, Pageable pageable) {
+        if(specialtyId != null) getSpecialtyOrThrowById(specialtyId);
+        if(roleId != null) getRoleOrThrowById(roleId);
+        return personalRepository.findAllByFilters(specialtyId, isActive, roleId, pageable)
+                .map(personalMapper::toResponse);
     }
 
     @Override
     @Transactional
-    public PersonalResponse update(Long id, PersonalRequest request) {
-        Personal personal = getOrThrow(id);
+    public PersonalResponse createPersonal(PersonalRegisterRequest request) {
+        var personal = personalRepository.findByAccountCi(request.ci())
+                .orElseGet(() -> {
+                    if(accountRepository.existsByEmailOrCi(request.email(), request.ci()))
+                        throw new BadRequestException("Account with email " + request.email() + " or ci"+ request.ci() +" already exists");
+                    return personalMapper.toEntity(request);
+                });
+        var role = getRoleOrThrowById(request.roleId());
+        personal.setRole(role);
+        personal.getAccount().setPassword(passwordEncoder.encode(request.password()));
+        var specialty = getSpecialtyOrThrowById(request.specialtyId());
+        personal.setSpecialty(specialty);
+        return personalMapper.toResponse(personalRepository.save(personal));
+    }
+
+    @Override
+    public PersonalResponse findPersonalById(Long personalId) {
+        return personalMapper.toResponse(getPersonalOrThrowById(personalId));
+    }
+
+    @Override
+    @Transactional
+    public PersonalResponse updatePersonalById(Long personalId, PersonalRequest request) {
+        var personal = getPersonalOrThrowById(personalId);
         personalMapper.toEntityUpdated(request, personal);
-        if (request.getRoleId() != null) {
-            personal.setRole(getRoleOrThrow(request.getRoleId()));
-        }
-        if (request.getSpecialtyId() != null)
-            if(personal.getRole().getName().equals(ERole.DOCTOR.name()))
-                personal.setSpecialty(getSpecialtyOrThrow(request.getSpecialtyId()));
-            else
-                throw new BusinessException(String.format("this %s does not have a specialty assigned", personal.getRole().getName()));
         return personalMapper.toResponse(personalRepository.save(personal));
     }
 
     @Override
     @Transactional
-    public void deactivate(Long id) {
-        Personal personal = getOrThrow(id);
+    public void deactivatePersonalById(Long personalId) {
+        var personal = getPersonalOrThrowById(personalId);
         personal.setActive(false);
         personalRepository.save(personal);
     }
 
     @Override
     @Transactional
-    public void assignPatient(Long doctorId, Long patientId, Long userId, String role) {
-        Personal doctor = getOrThrow(doctorId);
-        if (role.equals(ERole.DOCTOR.name()))
-            if(!doctorId.equals(userId))
-                throw new ForbiddenException("this user cannot assign this patient");
-        Patient patient = getPatientOrThrow(patientId);
+    public void assignPatient(AssignAndRemoveRequest request, Long userId, String role) {
+        var doctor = getPersonalPatientsOrThrowById(request.doctorId());
+        var patient = getPatientOrThrowById(request.patientId());
+        verifyDoctorPermission(role, doctor.getId(), userId);
         if (!doctor.getPatients().contains(patient)) {
             doctor.getPatients().add(patient);
             personalRepository.save(doctor);
@@ -90,12 +106,10 @@ public class PersonalServiceImpl implements PersonalService {
 
     @Override
     @Transactional
-    public void removePatient(Long doctorId, Long patientId, Long userId, String role) {
-        Personal doctor = getOrThrow(doctorId);
-        if (role.equals(ERole.DOCTOR.name()))
-            if(!doctorId.equals(userId))
-                throw new ForbiddenException("this user cannot assign this patient");
-        Patient patient = getPatientOrThrow(patientId);
+    public void removePatient(AssignAndRemoveRequest request, Long userId, String role) {
+        var doctor = getPersonalPatientsOrThrowById(request.doctorId());
+        var patient = getPatientOrThrowById(request.patientId());
+        verifyDoctorPermission(role, doctor.getId(), userId);
         if (doctor.getPatients().contains(patient)) {
             doctor.getPatients().remove(patient);
             personalRepository.save(doctor);
@@ -104,27 +118,40 @@ public class PersonalServiceImpl implements PersonalService {
 
     @Override
     public List<PatientResponse> getPatientsOfDoctor(Long doctorId) {
-        Personal doctor = getOrThrow(doctorId);
+        var doctor = getPersonalPatientsOrThrowById(doctorId);
         return patientMapper.toResponseList(doctor.getPatients());
     }
 
-    private Personal getOrThrow(Long id) {
-        return personalRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Personal not found with id: " + id));
+    private Personal getPersonalOrThrowById(Long personalId) {
+        return personalRepository.findById(personalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Personal not fount with id: " + personalId));
     }
 
-    private Specialty getSpecialtyOrThrow(Long id) {
-        return specialtyRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Specialty not found with id: " + id));
+    private Personal getPersonalPatientsOrThrowById(Long personalId) {
+        return personalRepository.findDoctorPatientsById(personalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Personal not fount with id: " + personalId));
     }
 
-    private Role getRoleOrThrow(Long id) {
-        return roleRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + id));
+    private Specialty getSpecialtyOrThrowById(Long specialtyId) {
+        if(specialtyId == null){
+            return null;
+        }
+        return  specialtyRepository.findById(specialtyId)
+                .orElseThrow(() -> new ResourceNotFoundException("Specialty not found with id: " + specialtyId));
     }
 
-    private Patient getPatientOrThrow(Long id) {
-        return patientRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Patient not found with id: " + id));
+    private Role getRoleOrThrowById(Long roleId) {
+        return roleRepository.findById(roleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Role not found with id: " + roleId));
+    }
+
+    private Patient getPatientOrThrowById(Long patientId) {
+        return patientRepository.findById(patientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Patient not found with id: " + patientId));
+    }
+
+    public void verifyDoctorPermission(String role, Long accountId, Long userId) {
+        if (role.equals(ERole.DOCTOR.name()) && !accountId.equals(userId))
+            throw new ForbiddenException("Not authorize to do this");
     }
 }
