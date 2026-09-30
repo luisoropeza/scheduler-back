@@ -4,9 +4,6 @@ import com.example.scheduler.dto.appointment.AppointmentRequest;
 import com.example.scheduler.dto.appointment.AppointmentResponse;
 import com.example.scheduler.dto.appointment.AppointmentSummaryItem;
 import com.example.scheduler.entity.Appointment;
-import com.example.scheduler.entity.Patient;
-import com.example.scheduler.entity.DoctorAvailability;
-import com.example.scheduler.entity.Personal;
 import com.example.scheduler.enums.AppointmentStatus;
 import com.example.scheduler.enums.ERole;
 import com.example.scheduler.exception.BusinessException;
@@ -23,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -49,28 +47,14 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Transactional
     public AppointmentResponse bookAppointment(AppointmentRequest request) {
         var appointmentDate = request.startTime().toLocalDate();
-        var requestedStartTime = request.startTime().toLocalTime();
+        var startTime = request.startTime().toLocalTime();
+        var endTime = request.endTime().toLocalTime();
         var dayOfWeek = appointmentDate.getDayOfWeek();
-        var isBlocked = scheduleExceptionRepository.existsByDoctorIdAndDateAndIsFullDayBlockTrue(
-                request.doctorId(), appointmentDate
-        );
-        if (isBlocked)
+        if (isBlocked(request.doctorId(), appointmentDate))
             throw new BusinessException("That schedule is blocked");
-        var availabilities = doctorAvailabilityRepository
-                .findByDoctorIdAndDayOfWeekAndActiveTrue(request.doctorId(), dayOfWeek);
-        var fitsInAvailability = availabilities.stream().anyMatch(a ->
-                !requestedStartTime.isBefore(a.getStartTime()) &&
-                        !request.endTime().toLocalTime().isAfter(a.getEndTime())
-        );
-        if (!fitsInAvailability)
+        if (!fitsInAvailability(request.doctorId(), dayOfWeek, startTime, endTime))
             throw new BusinessException("That Schedule is out of journey");
-        var isSlotTaken = appointmentRepository.existsOverlappingAppointment(
-                request.doctorId(),
-                request.startTime(),
-                request.endTime(),
-                List.of(AppointmentStatus.CANCELLED)
-        );
-        if (isSlotTaken)
+        if (isSlotTaken(request.doctorId(), request.startTime(), request.endTime()))
             throw new BusinessException("That slot is already taken");
         var doctor = personalRepository.getReferenceById(request.doctorId());
         var patient = patientRepository.getReferenceById(request.patientId());
@@ -81,7 +65,6 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .endTime(request.endTime())
                 .status(AppointmentStatus.CONFIRMED)
                 .build();
-
         return appointmentMapper.toResponse(appointmentRepository.save(appointment));
     }
 
@@ -169,5 +152,28 @@ public class AppointmentServiceImpl implements AppointmentService {
         if(role.equals(ERole.PATIENT.name()))
             if (!appointment.getPatient().getId().equals(userId))
                 throw new ForbiddenException("Not authorize to do this");
+    }
+
+    private boolean isBlocked(Long doctorId, LocalDate date) {
+        return scheduleExceptionRepository.existsByDoctorIdAndDateAndIsFullDayBlockTrue(
+                doctorId, date
+        );
+    }
+
+    private boolean fitsInAvailability(Long  doctorId, DayOfWeek dayOfWeek, LocalTime startTime, LocalTime endTime) {
+        var availabilities = doctorAvailabilityRepository
+                .findByDoctorIdAndDayOfWeekAndActiveTrue(doctorId, dayOfWeek);
+        return availabilities.stream().anyMatch(a ->
+                !startTime.isBefore(a.getStartTime()) && !endTime.isAfter(a.getEndTime())
+        );
+    }
+
+    private boolean isSlotTaken(Long doctorId, LocalDateTime startTime, LocalDateTime endTime) {
+        return appointmentRepository.existsOverlappingAppointment(
+                doctorId,
+                startTime,
+                endTime,
+                List.of(AppointmentStatus.CANCELLED)
+        );
     }
 }
